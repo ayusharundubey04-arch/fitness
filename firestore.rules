@@ -1,0 +1,675 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedOwner() {
+      return isVerifiedUser() && request.auth.token.email == 'ayusharundubey04@gmail.com';
+    }
+
+    function staffPath() {
+      return /databases/$(database)/documents/staff/$(request.auth.uid);
+    }
+
+    function hasActiveStaffDoc() {
+      return exists(staffPath()) && get(staffPath()).data.active == true;
+    }
+
+    function staffRole() {
+      return get(staffPath()).data.role;
+    }
+
+    function staffAssignedTrainerId() {
+      return get(staffPath()).data.assignedTrainerId;
+    }
+
+    function isOwner() {
+      return isVerifiedUser() && (isBootstrappedOwner() || (hasActiveStaffDoc() && staffRole() == 'owner'));
+    }
+
+    function isStaff() {
+      return isOwner() || (isVerifiedUser() && hasActiveStaffDoc() && staffRole() == 'staff');
+    }
+
+    function isTrainer() {
+      return isVerifiedUser() && hasActiveStaffDoc() && staffRole() == 'trainer';
+    }
+
+    function isAssignedTrainerMember(memberData) {
+      return memberData.assignedTrainerId is string
+        && memberData.assignedTrainerId.size() > 0
+        && (
+          memberData.assignedTrainerId == request.auth.uid
+          || (
+            hasActiveStaffDoc()
+            && staffAssignedTrainerId() is string
+            && staffAssignedTrainerId().size() > 0
+            && memberData.assignedTrainerId == staffAssignedTrainerId()
+          )
+        );
+    }
+
+    function isIsoDate(val) {
+      return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isOptionalIsoDate(val) {
+      return val is string && (val == '' || isIsoDate(val));
+    }
+
+    function isValidStaffAccount(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'active', 'assignedTrainerId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'active', 'assignedTrainerId', 'createdAt', 'updatedAt'])
+        && data.uid is string && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && data.role in ['owner', 'staff', 'trainer']
+        && data.active is bool
+        && data.assignedTrainerId is string && data.assignedTrainerId.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMember(data) {
+      return data.keys().hasAll([
+          'fullName', 'phone', 'email', 'joiningDate', 'planId', 'planName',
+          'startDate', 'expiryDate', 'paymentStatus', 'memberStatus',
+          'assignedTrainerId', 'consentConfirmed', 'archivedAt', 'notes',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'fullName', 'phone', 'email', 'joiningDate', 'planId', 'planName',
+          'startDate', 'expiryDate', 'paymentStatus', 'memberStatus',
+          'assignedTrainerId', 'consentConfirmed', 'archivedAt', 'notes',
+          'createdAt', 'updatedAt'
+        ])
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100
+        && data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20
+        && data.email is string && data.email.size() <= 160
+        && isIsoDate(data.joiningDate)
+        && data.planId is string && data.planId.size() >= 1 && data.planId.size() <= 128
+        && data.planName is string && data.planName.size() >= 1 && data.planName.size() <= 100
+        && isIsoDate(data.startDate)
+        && isIsoDate(data.expiryDate)
+        && data.paymentStatus in ['Paid', 'Pending', 'Partial', 'Refunded']
+        && data.memberStatus in ['Active', 'Expired', 'Paused']
+        && data.assignedTrainerId is string && data.assignedTrainerId.size() <= 128
+        && data.consentConfirmed is bool
+        && data.archivedAt is string && data.archivedAt.size() <= 40
+        && data.notes is string && data.notes.size() <= 500
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMembershipRecord(data) {
+      return data.keys().hasAll([
+          'memberId', 'memberName', 'planId', 'planName', 'startAt', 'endAt',
+          'status', 'actorUid', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'memberId', 'memberName', 'planId', 'planName', 'startAt', 'endAt',
+          'status', 'actorUid', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.memberId)
+        && data.memberName is string && data.memberName.size() >= 2 && data.memberName.size() <= 100
+        && data.planId is string && data.planId.size() >= 1 && data.planId.size() <= 128
+        && data.planName is string && data.planName.size() >= 1 && data.planName.size() <= 100
+        && isIsoDate(data.startAt)
+        && isIsoDate(data.endAt)
+        && data.status in ['Active', 'Expired', 'Paused', 'Cancelled']
+        && data.actorUid is string && isValidId(data.actorUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMembershipPlan(data) {
+      return data.keys().hasAll([
+          'name', 'duration', 'durationDays', 'priceDisplay', 'priceAmount',
+          'featured', 'active', 'publicVisibility', 'approvalStatus', 'approvedBy',
+          'features', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'duration', 'durationDays', 'priceDisplay', 'priceAmount',
+          'featured', 'active', 'publicVisibility', 'approvalStatus', 'approvedBy',
+          'features', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 80
+        && data.duration is string && data.duration.size() >= 2 && data.duration.size() <= 60
+        && data.durationDays is number && data.durationDays >= 1 && data.durationDays <= 3650
+        && data.priceDisplay is string && data.priceDisplay.size() >= 1 && data.priceDisplay.size() <= 40
+        && data.priceAmount is number && data.priceAmount >= 0 && data.priceAmount <= 1000000
+        && data.featured is bool
+        && data.active is bool
+        && data.publicVisibility is bool
+        && data.approvalStatus in ['draft', 'owner-approved']
+        && data.approvedBy is string && data.approvedBy.size() <= 160
+        && data.features is list && data.features.size() <= 12
+        && (data.features.size() == 0 || data.features[0] is string)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll([
+          'memberId', 'memberName', 'assignedTrainerId', 'occurredDate', 'occurredTime',
+          'recorderUid', 'recorderRole', 'method', 'sessionId', 'isCorrection',
+          'correctionOf', 'reason', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'memberId', 'memberName', 'assignedTrainerId', 'occurredDate', 'occurredTime',
+          'recorderUid', 'recorderRole', 'method', 'sessionId', 'isCorrection',
+          'correctionOf', 'reason', 'createdAt'
+        ])
+        && isValidId(data.memberId)
+        && data.memberName is string && data.memberName.size() >= 2 && data.memberName.size() <= 100
+        && data.assignedTrainerId is string && data.assignedTrainerId.size() <= 128
+        && isIsoDate(data.occurredDate)
+        && data.occurredTime is string && data.occurredTime.size() >= 4 && data.occurredTime.size() <= 16
+        && isValidId(data.recorderUid)
+        && data.recorderRole in ['owner', 'staff', 'trainer']
+        && data.method == 'manual'
+        && data.sessionId is string && data.sessionId.size() <= 128
+        && data.isCorrection is bool
+        && data.correctionOf is string && data.correctionOf.size() <= 128
+        && data.reason is string && data.reason.size() <= 300
+        && (!data.isCorrection || (data.reason.size() >= 3 && data.correctionOf.size() >= 1))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidEnquiry(data) {
+      return data.keys().hasAll([
+          'customerName', 'phone', 'email', 'interestedPlan', 'message',
+          'enquiryDate', 'status', 'assigneeUid', 'followUpDate', 'retentionReviewDate',
+          'consentAccepted', 'consentVersion', 'consentAt', 'internalNotes', 'source',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'customerName', 'phone', 'email', 'interestedPlan', 'message',
+          'enquiryDate', 'status', 'assigneeUid', 'followUpDate', 'retentionReviewDate',
+          'consentAccepted', 'consentVersion', 'consentAt', 'internalNotes', 'source',
+          'createdAt', 'updatedAt'
+        ])
+        && data.customerName is string && data.customerName.size() >= 2 && data.customerName.size() <= 80
+        && data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20
+        && data.email is string && data.email.size() <= 160
+        && data.interestedPlan is string && data.interestedPlan.size() >= 2 && data.interestedPlan.size() <= 80
+        && data.message is string && data.message.size() <= 500
+        && isIsoDate(data.enquiryDate)
+        && data.status in ['New', 'Contacted', 'Interested', 'Converted', 'Not interested']
+        && data.assigneeUid is string && data.assigneeUid.size() <= 128
+        && isOptionalIsoDate(data.followUpDate)
+        && isOptionalIsoDate(data.retentionReviewDate)
+        && data.consentAccepted is bool
+        && data.consentVersion is string && data.consentVersion.size() >= 1 && data.consentVersion.size() <= 40
+        && data.consentAt is string && data.consentAt.size() >= 1 && data.consentAt.size() <= 40
+        && data.internalNotes is string && data.internalNotes.size() <= 500
+        && data.source is string && data.source.size() >= 1 && data.source.size() <= 40
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTrainer(data) {
+      return data.keys().hasAll([
+          'staffUid', 'fullName', 'specialization', 'experience', 'bio', 'photoUrl',
+          'active', 'approvalStatus', 'consentConfirmed', 'approvedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'staffUid', 'fullName', 'specialization', 'experience', 'bio', 'photoUrl',
+          'active', 'approvalStatus', 'consentConfirmed', 'approvedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.staffUid is string && data.staffUid.size() <= 128
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 80
+        && data.specialization is string && data.specialization.size() >= 2 && data.specialization.size() <= 100
+        && data.experience is string && data.experience.size() >= 1 && data.experience.size() <= 60
+        && data.bio is string && data.bio.size() <= 400
+        && data.photoUrl is string && data.photoUrl.size() <= 500
+        && data.active is bool
+        && data.approvalStatus in ['draft', 'owner-approved']
+        && data.consentConfirmed is bool
+        && data.approvedBy is string && data.approvedBy.size() <= 160
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll([
+          'memberId', 'membershipId', 'memberName', 'planName', 'currency',
+          'totalAmount', 'paidAmount', 'pendingAmount', 'status', 'paymentMethod',
+          'reference', 'recorderUid', 'reconciled', 'reconciledBy', 'refundReason',
+          'transactionDate', 'receiptNumber', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'memberId', 'membershipId', 'memberName', 'planName', 'currency',
+          'totalAmount', 'paidAmount', 'pendingAmount', 'status', 'paymentMethod',
+          'reference', 'recorderUid', 'reconciled', 'reconciledBy', 'refundReason',
+          'transactionDate', 'receiptNumber', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.memberId)
+        && data.membershipId is string && data.membershipId.size() <= 128
+        && data.memberName is string && data.memberName.size() >= 2 && data.memberName.size() <= 100
+        && data.planName is string && data.planName.size() >= 1 && data.planName.size() <= 100
+        && data.currency == 'INR'
+        && data.totalAmount is number && data.totalAmount >= 0 && data.totalAmount <= 1000000
+        && data.paidAmount is number && data.paidAmount >= 0 && data.paidAmount <= 1000000
+        && data.pendingAmount is number && data.pendingAmount >= 0 && data.pendingAmount <= 1000000
+        && data.status in ['Paid', 'Pending', 'Partial', 'Refunded']
+        && data.paymentMethod in ['Cash', 'UPI', 'Card', 'Bank Transfer']
+        && data.reference is string && data.reference.size() <= 120
+        && isValidId(data.recorderUid)
+        && data.reconciled is bool
+        && data.reconciledBy is string && data.reconciledBy.size() <= 160
+        && data.refundReason is string && data.refundReason.size() <= 300
+        && isIsoDate(data.transactionDate)
+        && data.receiptNumber is string && data.receiptNumber.size() >= 4 && data.receiptNumber.size() <= 40
+        && data.notes is string && data.notes.size() <= 300
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGalleryPhoto(data) {
+      return data.keys().hasAll([
+          'title', 'category', 'imageUrl', 'caption', 'visible',
+          'isPlaceholder', 'rightsConfirmed', 'approvalStatus', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'category', 'imageUrl', 'caption', 'visible',
+          'isPlaceholder', 'rightsConfirmed', 'approvalStatus', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 80
+        && data.category in ['Strength', 'Conditioning', 'Studio']
+        && data.imageUrl is string && data.imageUrl.size() >= 1 && data.imageUrl.size() <= 500
+        && data.caption is string && data.caption.size() <= 240
+        && data.visible is bool
+        && data.isPlaceholder is bool
+        && data.rightsConfirmed is bool
+        && data.approvalStatus in ['draft', 'owner-approved']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSiteContent(data) {
+      return data.keys().hasAll([
+          'key', 'label', 'value', 'status', 'source', 'verifiedAt', 'approvedBy',
+          'version', 'editorUid', 'publishedAt', 'notes', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'key', 'label', 'value', 'status', 'source', 'verifiedAt', 'approvedBy',
+          'version', 'editorUid', 'publishedAt', 'notes', 'updatedAt'
+        ])
+        && data.key is string && data.key.size() >= 1 && data.key.size() <= 80
+        && data.label is string && data.label.size() >= 1 && data.label.size() <= 120
+        && data.value is string && data.value.size() <= 500
+        && data.status in ['verified', 'owner-approved', 'draft', 'unknown', 'disputed']
+        && data.source is string && data.source.size() <= 160
+        && data.verifiedAt is string && data.verifiedAt.size() <= 40
+        && data.approvedBy is string && data.approvedBy.size() <= 160
+        && data.version is number && data.version >= 1
+        && data.editorUid is string && isValidId(data.editorUid)
+        && data.publishedAt is string && data.publishedAt.size() <= 40
+        && data.notes is string && data.notes.size() <= 500
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAuditEvent(data) {
+      return data.keys().hasAll([
+          'actorUid', 'actorEmail', 'roleSnapshot', 'action', 'resourceType',
+          'resourceId', 'changedFields', 'reason', 'requestId', 'occurredAt'
+        ])
+        && data.keys().hasOnly([
+          'actorUid', 'actorEmail', 'roleSnapshot', 'action', 'resourceType',
+          'resourceId', 'changedFields', 'reason', 'requestId', 'occurredAt'
+        ])
+        && isValidId(data.actorUid)
+        && data.actorEmail is string && data.actorEmail.size() <= 160
+        && data.roleSnapshot in ['owner', 'staff', 'trainer']
+        && data.action is string && data.action.size() >= 2 && data.action.size() <= 80
+        && data.resourceType is string && data.resourceType.size() >= 2 && data.resourceType.size() <= 60
+        && data.resourceId is string && data.resourceId.size() >= 1 && data.resourceId.size() <= 128
+        && data.changedFields is list && data.changedFields.size() <= 30
+        && data.reason is string && data.reason.size() <= 300
+        && data.requestId is string && data.requestId.size() >= 4 && data.requestId.size() <= 80
+        && data.occurredAt is timestamp;
+    }
+
+    function isValidPublicSettings(data) {
+      return data.keys().hasAll([
+          'businessName', 'address', 'phoneDisplay', 'phoneApproved',
+          'whatsappNumber', 'whatsappApproved', 'openingHours', 'closingHours',
+          'hoursApproved', 'mapsUrl', 'mapsApproved', 'plusCodeNote',
+          'ratingValue', 'reviewCount', 'reviewSnapshotDate', 'reviewsApproved',
+          'privacyContact', 'retentionPolicySummary', 'announcementText',
+          'announcementActive', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'businessName', 'address', 'phoneDisplay', 'phoneApproved',
+          'whatsappNumber', 'whatsappApproved', 'openingHours', 'closingHours',
+          'hoursApproved', 'mapsUrl', 'mapsApproved', 'plusCodeNote',
+          'ratingValue', 'reviewCount', 'reviewSnapshotDate', 'reviewsApproved',
+          'privacyContact', 'retentionPolicySummary', 'announcementText',
+          'announcementActive', 'updatedAt'
+        ])
+        && data.businessName is string && data.businessName.size() >= 2 && data.businessName.size() <= 100
+        && data.address is string && data.address.size() >= 10 && data.address.size() <= 240
+        && data.phoneDisplay is string && data.phoneDisplay.size() <= 30
+        && data.phoneApproved is bool
+        && data.whatsappNumber is string && data.whatsappNumber.size() <= 20
+        && data.whatsappApproved is bool
+        && data.openingHours is string && data.openingHours.size() <= 120
+        && data.closingHours is string && data.closingHours.size() <= 80
+        && data.hoursApproved is bool
+        && data.mapsUrl is string && data.mapsUrl.size() <= 500
+        && data.mapsApproved is bool
+        && data.plusCodeNote is string && data.plusCodeNote.size() <= 160
+        && data.ratingValue is string && data.ratingValue.size() <= 16
+        && data.reviewCount is string && data.reviewCount.size() <= 20
+        && data.reviewSnapshotDate is string && data.reviewSnapshotDate.size() <= 40
+        && data.reviewsApproved is bool
+        && data.privacyContact is string && data.privacyContact.size() <= 160
+        && data.retentionPolicySummary is string && data.retentionPolicySummary.size() <= 300
+        && data.announcementText is string && data.announcementText.size() <= 240
+        && data.announcementActive is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidOperationsSettings(data) {
+      return data.keys().hasAll([
+          'enquiryRecipientsNote', 'exportRequiresOwner', 'defaultRetentionDays',
+          'appCheckEnabledNote', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'enquiryRecipientsNote', 'exportRequiresOwner', 'defaultRetentionDays',
+          'appCheckEnabledNote', 'updatedAt'
+        ])
+        && data.enquiryRecipientsNote is string && data.enquiryRecipientsNote.size() <= 240
+        && data.exportRequiresOwner is bool
+        && data.defaultRetentionDays is number && data.defaultRetentionDays >= 30 && data.defaultRetentionDays <= 3650
+        && data.appCheckEnabledNote is string && data.appCheckEnabledNote.size() <= 240
+        && data.updatedAt is timestamp;
+    }
+
+    match /staff/{uid} {
+      allow get: if isValidId(uid) && (isOwner() || (isVerifiedUser() && request.auth.uid == uid));
+      allow list: if isOwner();
+      allow create: if isOwner() && isValidId(uid) && isValidStaffAccount(incoming())
+        && incoming().uid == uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isOwner() && isValidId(uid) && isValidStaffAccount(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'email', 'displayName', 'role', 'active', 'assignedTrainerId', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(uid) && uid != request.auth.uid;
+    }
+
+    match /members/{memberId} {
+      allow get: if isValidId(memberId) && (
+        isStaff() || (isTrainer() && existing().archivedAt == '' && isAssignedTrainerMember(existing()))
+      );
+      allow list: if isStaff() || (
+        isTrainer() && resource.data.archivedAt == '' && isAssignedTrainerMember(resource.data)
+      );
+      allow create: if isStaff() && isValidId(memberId) && isValidMember(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isStaff() && isValidId(memberId) && isValidMember(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'fullName', 'phone', 'email', 'joiningDate', 'planId', 'planName',
+          'startDate', 'expiryDate', 'paymentStatus', 'memberStatus',
+          'assignedTrainerId', 'consentConfirmed', 'archivedAt', 'notes', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(memberId);
+    }
+
+    match /memberships/{membershipId} {
+      allow get: if isStaff() && isValidId(membershipId);
+      allow list: if isStaff();
+      allow create: if isStaff() && isValidId(membershipId) && isValidMembershipRecord(incoming())
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/members/$(incoming().memberId))
+        && exists(/databases/$(database)/documents/membershipPlans/$(incoming().planId));
+      allow update: if isStaff() && isValidId(membershipId) && isValidMembershipRecord(incoming())
+        && incoming().memberId == existing().memberId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().actorUid == request.auth.uid
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'memberName', 'planId', 'planName', 'startAt', 'endAt', 'status', 'actorUid', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(membershipId);
+    }
+
+    match /membershipPlans/{planId} {
+      allow get: if isValidId(planId) && (
+        (existing().active == true && existing().publicVisibility == true && existing().approvalStatus == 'owner-approved')
+        || isStaff()
+      );
+      allow list: if (
+        resource.data.active == true && resource.data.publicVisibility == true && resource.data.approvalStatus == 'owner-approved'
+      ) || isStaff();
+      allow create: if isValidId(planId) && isValidMembershipPlan(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isOwner()
+          || (isStaff() && incoming().publicVisibility == false && incoming().approvalStatus == 'draft' && incoming().approvedBy == '')
+        );
+      allow update: if isValidId(planId) && isValidMembershipPlan(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isOwner()
+          || (isStaff() && incoming().publicVisibility == false && incoming().approvalStatus == 'draft' && incoming().approvedBy == '')
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'duration', 'durationDays', 'priceDisplay', 'priceAmount',
+          'featured', 'active', 'publicVisibility', 'approvalStatus', 'approvedBy',
+          'features', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(planId);
+    }
+
+    match /attendance/{attendanceId} {
+      allow get: if isValidId(attendanceId) && (
+        isStaff() || (isTrainer() && isAssignedTrainerMember(existing()))
+      );
+      allow list: if isStaff() || (isTrainer() && isAssignedTrainerMember(resource.data));
+      allow create: if isValidId(attendanceId)
+        && (isStaff() || (isTrainer() && isAssignedTrainerMember(incoming())))
+        && isValidAttendance(incoming())
+        && incoming().recorderUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/members/$(incoming().memberId));
+      allow update, delete: if false;
+    }
+
+    match /enquiries/{enquiryId} {
+      allow get: if isStaff() && isValidId(enquiryId);
+      allow list: if isStaff();
+      allow create: if isValidId(enquiryId) && isValidEnquiry(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isStaff()
+          || (
+            incoming().consentAccepted == true
+            && incoming().status == 'New'
+            && incoming().internalNotes == ''
+            && incoming().assigneeUid == ''
+            && incoming().followUpDate == ''
+          )
+        );
+      allow update: if isStaff() && isValidId(enquiryId) && isValidEnquiry(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'customerName', 'phone', 'email', 'interestedPlan', 'message',
+          'enquiryDate', 'status', 'assigneeUid', 'followUpDate', 'retentionReviewDate',
+          'consentAccepted', 'consentVersion', 'consentAt', 'internalNotes', 'source', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(enquiryId);
+    }
+
+    match /trainers/{trainerId} {
+      allow get: if isValidId(trainerId) && (
+        (existing().active == true && existing().approvalStatus == 'owner-approved' && existing().consentConfirmed == true)
+        || isStaff()
+        || isTrainer()
+      );
+      allow list: if (
+        resource.data.active == true && resource.data.approvalStatus == 'owner-approved' && resource.data.consentConfirmed == true
+      ) || isStaff() || isTrainer();
+      allow create: if isValidId(trainerId) && isValidTrainer(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isOwner()
+          || (isStaff() && incoming().approvalStatus == 'draft' && incoming().approvedBy == '')
+        );
+      allow update: if isValidId(trainerId) && isValidTrainer(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isOwner()
+          || (isStaff() && incoming().approvalStatus == 'draft' && incoming().approvedBy == '')
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'staffUid', 'fullName', 'specialization', 'experience', 'bio', 'photoUrl',
+          'active', 'approvalStatus', 'consentConfirmed', 'approvedBy', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(trainerId);
+    }
+
+    match /payments/{paymentId} {
+      allow get: if isStaff() && isValidId(paymentId);
+      allow list: if isStaff();
+      allow create: if isStaff() && isValidId(paymentId) && isValidPayment(incoming())
+        && incoming().recorderUid == request.auth.uid
+        && incoming().reconciled == false
+        && incoming().reconciledBy == ''
+        && incoming().status != 'Refunded'
+        && incoming().refundReason == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/members/$(incoming().memberId));
+      allow update: if isOwner() && isValidId(paymentId) && isValidPayment(incoming())
+        && incoming().memberId == existing().memberId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'memberName', 'membershipId', 'planName', 'currency', 'totalAmount',
+          'paidAmount', 'pendingAmount', 'status', 'paymentMethod', 'reference',
+          'reconciled', 'reconciledBy', 'refundReason', 'transactionDate',
+          'receiptNumber', 'notes', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(paymentId);
+    }
+
+    match /gallery/{galleryId} {
+      allow get: if isValidId(galleryId) && (
+        (existing().visible == true && existing().approvalStatus == 'owner-approved' && (existing().isPlaceholder == true || existing().rightsConfirmed == true))
+        || isStaff()
+      );
+      allow list: if (
+        resource.data.visible == true && resource.data.approvalStatus == 'owner-approved'
+      ) || isStaff();
+      allow create: if isValidId(galleryId) && isValidGalleryPhoto(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner() && (incoming().approvalStatus != 'owner-approved' || incoming().isPlaceholder == true || incoming().rightsConfirmed == true))
+          || (isStaff() && incoming().approvalStatus == 'draft')
+        );
+      allow update: if isValidId(galleryId) && isValidGalleryPhoto(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner() && (incoming().approvalStatus != 'owner-approved' || incoming().isPlaceholder == true || incoming().rightsConfirmed == true))
+          || (isStaff() && incoming().approvalStatus == 'draft')
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'category', 'imageUrl', 'caption', 'visible',
+          'isPlaceholder', 'rightsConfirmed', 'approvalStatus', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(galleryId);
+    }
+
+    match /siteContent/{contentId} {
+      allow get: if isValidId(contentId) && (
+        existing().status in ['verified', 'owner-approved'] || isStaff()
+      );
+      allow list: if resource.data.status in ['verified', 'owner-approved'] || isStaff();
+      allow create: if isValidId(contentId) && isValidSiteContent(incoming())
+        && incoming().editorUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && (
+          isOwner()
+          || (isStaff() && incoming().status == 'draft' && incoming().approvedBy == '')
+        );
+      allow update: if isValidId(contentId) && isValidSiteContent(incoming())
+        && incoming().editorUid == request.auth.uid
+        && incoming().updatedAt == request.time
+        && (
+          isOwner()
+          || (isStaff() && incoming().status == 'draft' && incoming().approvedBy == '')
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'key', 'label', 'value', 'status', 'source', 'verifiedAt', 'approvedBy',
+          'version', 'editorUid', 'publishedAt', 'notes', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(contentId);
+    }
+
+    match /auditEvents/{eventId} {
+      allow get: if isOwner() && isValidId(eventId);
+      allow list: if isOwner();
+      allow create: if (isOwner() || isStaff() || isTrainer())
+        && isValidId(eventId)
+        && isValidAuditEvent(incoming())
+        && incoming().actorUid == request.auth.uid
+        && incoming().occurredAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && (settingId == 'public' || isOwner());
+      allow list: if isOwner();
+      allow create, update: if isOwner() && isValidId(settingId)
+        && incoming().updatedAt == request.time
+        && (
+          (settingId == 'public' && isValidPublicSettings(incoming()))
+          || (settingId == 'operations' && isValidOperationsSettings(incoming()))
+        );
+      allow delete: if false;
+    }
+  }
+}

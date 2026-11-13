@@ -1,0 +1,353 @@
+{
+  "entities": {
+    "StaffAccount": {
+      "title": "StaffAccount",
+      "description": "Authorized owner, front-desk staff, or trainer account for 3-tier RBAC.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "role": { "type": "string", "enum": ["owner", "staff", "trainer"] },
+        "active": { "type": "boolean" },
+        "assignedTrainerId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "active", "assignedTrainerId", "createdAt", "updatedAt"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "Private gym member profile with trainer assignment, consent flag, and archive status.",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "phone": { "type": "string", "minLength": 8, "maxLength": 20 },
+        "email": { "type": "string", "maxLength": 160 },
+        "joiningDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "planId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "planName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "startDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "expiryDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "paymentStatus": { "type": "string", "enum": ["Paid", "Pending", "Partial", "Refunded"] },
+        "memberStatus": { "type": "string", "enum": ["Active", "Expired", "Paused"] },
+        "assignedTrainerId": { "type": "string", "maxLength": 128 },
+        "consentConfirmed": { "type": "boolean" },
+        "archivedAt": { "type": "string", "maxLength": 40 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "fullName", "phone", "email", "joiningDate", "planId", "planName",
+        "startDate", "expiryDate", "paymentStatus", "memberStatus",
+        "assignedTrainerId", "consentConfirmed", "archivedAt", "notes", "createdAt", "updatedAt"
+      ]
+    },
+    "Membership": {
+      "title": "Membership",
+      "description": "Assigned membership term linking a member to a membership plan.",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "planId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "planName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "startAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "endAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "status": { "type": "string", "enum": ["Active", "Expired", "Paused", "Cancelled"] },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["memberId", "memberName", "planId", "planName", "startAt", "endAt", "status", "actorUid", "createdAt", "updatedAt"]
+    },
+    "MembershipPlan": {
+      "title": "MembershipPlan",
+      "description": "Membership tier requiring owner approval before public website display.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "duration": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "durationDays": { "type": "number" },
+        "priceDisplay": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "priceAmount": { "type": "number" },
+        "featured": { "type": "boolean" },
+        "active": { "type": "boolean" },
+        "publicVisibility": { "type": "boolean" },
+        "approvalStatus": { "type": "string", "enum": ["draft", "owner-approved"] },
+        "approvedBy": { "type": "string", "maxLength": 160 },
+        "features": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "name", "duration", "durationDays", "priceDisplay", "priceAmount",
+        "featured", "active", "publicVisibility", "approvalStatus", "approvedBy",
+        "features", "createdAt", "updatedAt"
+      ]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Append-only manual member check-in and correction log.",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "assignedTrainerId": { "type": "string", "maxLength": 128 },
+        "occurredDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "occurredTime": { "type": "string", "minLength": 4, "maxLength": 16 },
+        "recorderUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "recorderRole": { "type": "string", "enum": ["owner", "staff", "trainer"] },
+        "method": { "type": "string", "enum": ["manual"] },
+        "sessionId": { "type": "string", "maxLength": 128 },
+        "isCorrection": { "type": "boolean" },
+        "correctionOf": { "type": "string", "maxLength": 128 },
+        "reason": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "memberId", "memberName", "assignedTrainerId", "occurredDate", "occurredTime",
+        "recorderUid", "recorderRole", "method", "sessionId", "isCorrection",
+        "correctionOf", "reason", "createdAt"
+      ]
+    },
+    "Enquiry": {
+      "title": "Enquiry",
+      "description": "Public website enquiry with mandatory consent metadata.",
+      "type": "object",
+      "properties": {
+        "customerName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "phone": { "type": "string", "minLength": 8, "maxLength": 20 },
+        "email": { "type": "string", "maxLength": 160 },
+        "interestedPlan": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "message": { "type": "string", "maxLength": 500 },
+        "enquiryDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "status": { "type": "string", "enum": ["New", "Contacted", "Interested", "Converted", "Not interested"] },
+        "assigneeUid": { "type": "string", "maxLength": 128 },
+        "followUpDate": { "type": "string", "maxLength": 10 },
+        "retentionReviewDate": { "type": "string", "maxLength": 10 },
+        "consentAccepted": { "type": "boolean" },
+        "consentVersion": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "consentAt": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "internalNotes": { "type": "string", "maxLength": 500 },
+        "source": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "customerName", "phone", "email", "interestedPlan", "message", "enquiryDate",
+        "status", "assigneeUid", "followUpDate", "retentionReviewDate",
+        "consentAccepted", "consentVersion", "consentAt", "internalNotes", "source",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "Trainer": {
+      "title": "Trainer",
+      "description": "Trainer profile requiring owner approval and consent confirmation before public display.",
+      "type": "object",
+      "properties": {
+        "staffUid": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "specialization": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "experience": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "bio": { "type": "string", "maxLength": 400 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "active": { "type": "boolean" },
+        "approvalStatus": { "type": "string", "enum": ["draft", "owner-approved"] },
+        "consentConfirmed": { "type": "boolean" },
+        "approvedBy": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "staffUid", "fullName", "specialization", "experience", "bio", "photoUrl",
+        "active", "approvalStatus", "consentConfirmed", "approvedBy", "createdAt", "updatedAt"
+      ]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Offline/desk payment ledger entry with reconciliation and refund governance.",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "membershipId": { "type": "string", "maxLength": 128 },
+        "memberName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "planName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "currency": { "type": "string", "enum": ["INR"] },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "pendingAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["Paid", "Pending", "Partial", "Refunded"] },
+        "paymentMethod": { "type": "string", "enum": ["Cash", "UPI", "Card", "Bank Transfer"] },
+        "reference": { "type": "string", "maxLength": 120 },
+        "recorderUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reconciled": { "type": "boolean" },
+        "reconciledBy": { "type": "string", "maxLength": 160 },
+        "refundReason": { "type": "string", "maxLength": 300 },
+        "transactionDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 10 },
+        "receiptNumber": { "type": "string", "minLength": 4, "maxLength": 40 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "memberId", "membershipId", "memberName", "planName", "currency",
+        "totalAmount", "paidAmount", "pendingAmount", "status", "paymentMethod",
+        "reference", "recorderUid", "reconciled", "reconciledBy", "refundReason",
+        "transactionDate", "receiptNumber", "notes", "createdAt", "updatedAt"
+      ]
+    },
+    "GalleryPhoto": {
+      "title": "GalleryPhoto",
+      "description": "Gallery media asset with rights confirmation and approval gate.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "category": { "type": "string", "enum": ["Strength", "Conditioning", "Studio"] },
+        "imageUrl": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "caption": { "type": "string", "maxLength": 240 },
+        "visible": { "type": "boolean" },
+        "isPlaceholder": { "type": "boolean" },
+        "rightsConfirmed": { "type": "boolean" },
+        "approvalStatus": { "type": "string", "enum": ["draft", "owner-approved"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "title", "category", "imageUrl", "caption", "visible", "isPlaceholder",
+        "rightsConfirmed", "approvalStatus", "createdAt", "updatedAt"
+      ]
+    },
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "Content register entry tracking verification and owner approval status.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "value": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["verified", "owner-approved", "draft", "unknown", "disputed"] },
+        "source": { "type": "string", "maxLength": 160 },
+        "verifiedAt": { "type": "string", "maxLength": 40 },
+        "approvedBy": { "type": "string", "maxLength": 160 },
+        "version": { "type": "number" },
+        "editorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "publishedAt": { "type": "string", "maxLength": 40 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "key", "label", "value", "status", "source", "verifiedAt", "approvedBy",
+        "version", "editorUid", "publishedAt", "notes", "updatedAt"
+      ]
+    },
+    "AuditEvent": {
+      "title": "AuditEvent",
+      "description": "Immutable operational audit log for sensitive admin and coaching actions.",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 160 },
+        "roleSnapshot": { "type": "string", "enum": ["owner", "staff", "trainer"] },
+        "action": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "resourceType": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "changedFields": { "type": "array" },
+        "reason": { "type": "string", "maxLength": 300 },
+        "requestId": { "type": "string", "minLength": 4, "maxLength": 80 },
+        "occurredAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "actorUid", "actorEmail", "roleSnapshot", "action", "resourceType",
+        "resourceId", "changedFields", "reason", "requestId", "occurredAt"
+      ]
+    },
+    "SiteSettingsPublic": {
+      "title": "SiteSettingsPublic",
+      "description": "Public site configuration with explicit per-fact approval booleans.",
+      "type": "object",
+      "properties": {
+        "businessName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "address": { "type": "string", "minLength": 10, "maxLength": 240 },
+        "phoneDisplay": { "type": "string", "maxLength": 30 },
+        "phoneApproved": { "type": "boolean" },
+        "whatsappNumber": { "type": "string", "maxLength": 20 },
+        "whatsappApproved": { "type": "boolean" },
+        "openingHours": { "type": "string", "maxLength": 120 },
+        "closingHours": { "type": "string", "maxLength": 80 },
+        "hoursApproved": { "type": "boolean" },
+        "mapsUrl": { "type": "string", "maxLength": 500 },
+        "mapsApproved": { "type": "boolean" },
+        "plusCodeNote": { "type": "string", "maxLength": 160 },
+        "ratingValue": { "type": "string", "maxLength": 16 },
+        "reviewCount": { "type": "string", "maxLength": 20 },
+        "reviewSnapshotDate": { "type": "string", "maxLength": 40 },
+        "reviewsApproved": { "type": "boolean" },
+        "privacyContact": { "type": "string", "maxLength": 160 },
+        "retentionPolicySummary": { "type": "string", "maxLength": 300 },
+        "announcementText": { "type": "string", "maxLength": 240 },
+        "announcementActive": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "businessName", "address", "phoneDisplay", "phoneApproved",
+        "whatsappNumber", "whatsappApproved", "openingHours", "closingHours",
+        "hoursApproved", "mapsUrl", "mapsApproved", "plusCodeNote",
+        "ratingValue", "reviewCount", "reviewSnapshotDate", "reviewsApproved",
+        "privacyContact", "retentionPolicySummary", "announcementText",
+        "announcementActive", "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/staff/{uid}": {
+      "schema": { "$ref": "#/entities/StaffAccount" },
+      "description": "Owner-managed staff RBAC registry (owner, staff, trainer)."
+    },
+    "/members/{memberId}": {
+      "schema": { "$ref": "#/entities/Member" },
+      "description": "Gym member records; trainers can only read non-archived assigned members."
+    },
+    "/memberships/{membershipId}": {
+      "schema": { "$ref": "#/entities/Membership" },
+      "description": "Assigned membership terms linking members and membership plans."
+    },
+    "/membershipPlans/{planId}": {
+      "schema": { "$ref": "#/entities/MembershipPlan" },
+      "description": "Membership plans; publicly visible only when active, publicVisibility, and owner-approved."
+    },
+    "/attendance/{attendanceId}": {
+      "schema": { "$ref": "#/entities/Attendance" },
+      "description": "Append-only manual check-in and correction log."
+    },
+    "/enquiries/{enquiryId}": {
+      "schema": { "$ref": "#/entities/Enquiry" },
+      "description": "Public website enquiries with mandatory consent capture; owner/staff readable only."
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "Offline payment ledger; owner-only reconciliation, refunds, and deletion."
+    },
+    "/trainers/{trainerId}": {
+      "schema": { "$ref": "#/entities/Trainer" },
+      "description": "Trainer directory; publicly visible only when active, consentConfirmed, and owner-approved."
+    },
+    "/gallery/{galleryId}": {
+      "schema": { "$ref": "#/entities/GalleryPhoto" },
+      "description": "Gallery assets; publicly visible only when visible, owner-approved, and rights-confirmed or placeholder."
+    },
+    "/siteContent/{contentId}": {
+      "schema": { "$ref": "#/entities/SiteContent" },
+      "description": "Content verification register entries."
+    },
+    "/auditEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/AuditEvent" },
+      "description": "Append-only audit trail readable exclusively by owner."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettingsPublic" },
+      "description": "Public site approval toggles and private operations settings."
+    }
+  }
+}

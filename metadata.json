@@ -1,0 +1,6 @@
+{
+  "name": "Assure Fitness Club LLP",
+  "description": "Premium 3D fitness club website for Assure Fitness Club LLP in Naroda, Ahmedabad — strength training, group fitness, memberships, and instant WhatsApp enquiries.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
