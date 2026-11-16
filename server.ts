@@ -9,7 +9,7 @@ import { computePaymentAmounts } from './src/utils/adminLogic.ts';
 import type { StaffRole } from './src/types/gym.ts';
 
 const PORT = Number(process.env.PORT || 3000);
-const BOOTSTRAPPED_OWNER_EMAIL = 'ayusharundubey04@gmail.com';
+const BOOTSTRAPPED_OWNER_EMAILS = ['ayusharundubey04@gmail.com'];
 const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
 
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -84,7 +84,11 @@ async function resolveAuthorizedStaffToken(
 ): Promise<AuthorizedStaffUser | null> {
   const user = await verifyFirebaseIdToken(idToken);
   if (!user || !user.emailVerified) return null;
-  if (user.email.toLowerCase() === BOOTSTRAPPED_OWNER_EMAIL.toLowerCase()) {
+  if (
+    BOOTSTRAPPED_OWNER_EMAILS.some(
+      (e) => e.toLowerCase() === user.email.toLowerCase(),
+    )
+  ) {
     return { ...user, role: 'owner' };
   }
 

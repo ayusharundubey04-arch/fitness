@@ -11,16 +11,23 @@ import {
 import type {
   EnquiryRecord,
   GymMember,
+  LoginEventRecord,
+  MembershipRequestRecord,
   PaymentRecord,
   SiteContentRecord,
 } from '../types/gym';
 import { computeDashboardMetrics, formatInr } from '../utils/adminLogic';
+import RecentActivityPanel from './RecentActivityPanel';
 
 interface OverviewTabProps {
   members: GymMember[];
   enquiries: EnquiryRecord[];
   payments: PaymentRecord[];
   siteContent: SiteContentRecord[];
+  membershipRequests?: MembershipRequestRecord[];
+  loginEvents?: LoginEventRecord[];
+  isOwner?: boolean;
+  pendingApprovalsCount?: number;
   onNavigateTab: (tab: string) => void;
 }
 
@@ -29,6 +36,10 @@ export default function OverviewTab({
   enquiries,
   payments,
   siteContent,
+  membershipRequests = [],
+  loginEvents = [],
+  isOwner = false,
+  pendingApprovalsCount = 0,
   onNavigateTab,
 }: OverviewTabProps) {
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -60,10 +71,41 @@ export default function OverviewTab({
       icon: CalendarClock,
       accent: metrics.upcomingExpirations.length > 0,
     },
+    {
+      label: 'Pending Approvals',
+      value: String(pendingApprovalsCount),
+      icon: UserCheck,
+      accent: pendingApprovalsCount > 0,
+    },
   ];
 
   return (
     <div className="space-y-8">
+      {pendingApprovalsCount > 0 && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <UserCheck className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-white">
+                {pendingApprovalsCount} Member Gmail Verification Request
+                {pendingApprovalsCount === 1 ? '' : 's'} Pending Approval
+              </p>
+              <p className="text-xs text-amber-100/80">
+                Review member claims and approve how many months each membership should remain
+                valid.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateTab('approvals')}
+            className="shrink-0 min-h-[38px] rounded-md bg-[#FF5A1F] px-4 text-xs font-semibold text-white hover:bg-[#e54c14] cursor-pointer"
+          >
+            Review &amp; Approve
+          </button>
+        </div>
+      )}
+
       {/* Verification Gate Summary */}
       <div className="rounded-lg border border-white/10 bg-[#111111] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-start gap-3">
@@ -217,6 +259,14 @@ export default function OverviewTab({
           </div>
         </section>
       </div>
+
+      {/* Recent Activity: Membership Approvals & Portal Logins */}
+      <RecentActivityPanel
+        requests={membershipRequests}
+        loginEvents={loginEvents}
+        isOwner={isOwner}
+        onNavigateTab={onNavigateTab}
+      />
 
       {/* Upcoming Expirations Table */}
       <section className="rounded-lg border border-white/10 bg-[#111111] p-6">

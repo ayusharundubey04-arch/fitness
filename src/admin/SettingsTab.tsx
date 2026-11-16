@@ -1,7 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { CheckCircle2, Lock } from 'lucide-react';
+import {
+  EmailAuthProvider,
+  linkWithCredential,
+  reauthenticateWithPopup,
+  updatePassword,
+} from 'firebase/auth';
+import { CheckCircle2, KeyRound, Lock } from 'lucide-react';
 import type { OperationsSettingsRecord, SiteSettingsRecord } from '../types/gym';
 import { BUSINESS_INFO } from '../data/clubData';
+import { auth, googleProvider } from '../lib/firebase';
 import {
   saveOperationsSettings,
   saveSiteSettings,
@@ -86,6 +93,13 @@ export default function SettingsTab({
   const [savingOps, setSavingOps] = useState(false);
   const [opsSaved, setOpsSaved] = useState(false);
   const [opsError, setOpsError] = useState<string | null>(null);
+
+  // Owner password linking / update (when signed in via Google or Password)
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!settings) return;
@@ -568,6 +582,132 @@ export default function SettingsTab({
               {savingOps ? 'Saving...' : 'Save Operations Settings'}
             </button>
           </div>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-white/10 bg-[#111111] p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-[#FF5A1F]" aria-hidden="true" />
+          <h3 className="font-display text-2xl font-bold text-white">
+            Owner Email &amp; Password Credentials
+          </h3>
+        </div>
+        <p className="text-xs leading-relaxed text-[#A1A1AA]">
+          Link or update a password for your signed-in account ({staffUser.email}) so you can sign
+          into <code className="text-white">/admin</code> directly with Email &amp; Password in
+          addition to Google Sign-In.
+        </p>
+
+        {passwordMsg && (
+          <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs text-emerald-300 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            <span>{passwordMsg}</span>
+          </div>
+        )}
+        {passwordError && (
+          <p role="alert" className="text-xs font-medium text-[#FF5A1F]">
+            {passwordError}
+          </p>
+        )}
+
+        <form
+          onSubmit={async (e: FormEvent) => {
+            e.preventDefault();
+            setPasswordMsg(null);
+            setPasswordError(null);
+            const currentUser = auth.currentUser;
+            if (!currentUser || !currentUser.email) {
+              setPasswordError('An active verified session is required.');
+              return;
+            }
+            if (newPassword.length < 6) {
+              setPasswordError('Password must be at least 6 characters.');
+              return;
+            }
+            if (newPassword !== confirmPassword) {
+              setPasswordError('Passwords do not match.');
+              return;
+            }
+            setSavingPassword(true);
+            try {
+              const hasPassword = currentUser.providerData.some(
+                (p) => p.providerId === 'password',
+              );
+              const applyCredential = async () => {
+                if (hasPassword) {
+                  await updatePassword(currentUser, newPassword);
+                } else {
+                  const cred = EmailAuthProvider.credential(
+                    currentUser.email!,
+                    newPassword,
+                  );
+                  await linkWithCredential(currentUser, cred);
+                }
+              };
+              try {
+                await applyCredential();
+              } catch (err: unknown) {
+                const code =
+                  typeof err === 'object' && err !== null && 'code' in err
+                    ? String((err as { code?: unknown }).code)
+                    : '';
+                if (code === 'auth/requires-recent-login') {
+                  await reauthenticateWithPopup(currentUser, googleProvider);
+                  await applyCredential();
+                } else {
+                  throw err;
+                }
+              }
+              setNewPassword('');
+              setConfirmPassword('');
+              setPasswordMsg(
+                `Password saved for ${currentUser.email}. You can now sign in with Email & Password on /admin.`,
+              );
+            } catch (err) {
+              setPasswordError(
+                err instanceof Error ? err.message : 'Unable to save password.',
+              );
+            } finally {
+              setSavingPassword(false);
+            }
+          }}
+          className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end"
+        >
+          <div>
+            <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+              New Password
+            </label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Minimum 6 characters"
+              className="w-full min-h-[42px] rounded-md border border-white/15 bg-[#080808] px-3 text-sm text-white"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+              Confirm Password
+            </label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter password"
+              className="w-full min-h-[42px] rounded-md border border-white/15 bg-[#080808] px-3 text-sm text-white"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={savingPassword}
+            className="min-h-[42px] rounded-md bg-[#FF5A1F] px-5 text-sm font-semibold text-white hover:bg-[#e54c14] disabled:opacity-60 cursor-pointer"
+          >
+            {savingPassword ? 'Saving...' : 'Save Login Password'}
+          </button>
         </form>
       </section>
     </div>

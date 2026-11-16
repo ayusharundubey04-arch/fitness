@@ -4,7 +4,9 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -24,10 +26,17 @@ import type {
   EnquiryRecord,
   GalleryPhotoRecord,
   GymMember,
+  LoginEventRecord,
+  LoginEventRole,
+  LoginMethod,
+  LoginPortal,
   MembershipPlanRecord,
   MembershipRecord,
+  MembershipRequestRecord,
+  MemberStatus,
   OperationsSettingsRecord,
   PaymentRecord,
+  PaymentStatus,
   SiteContentRecord,
   SiteSettingsRecord,
   StaffAccount,
@@ -35,11 +44,15 @@ import type {
   TrainerRecord,
 } from '../types/gym';
 import { ENQUIRY_CONSENT_VERSION } from '../utils/clubLogic';
-import { addDaysToIsoDate } from '../utils/adminLogic';
 import {
-  BOOTSTRAPPED_OWNER_EMAIL,
+  addDaysToIsoDate,
+  addMonthsToIsoDate,
+  normalizeEmail,
+} from '../utils/adminLogic';
+import {
   db,
   handleFirestoreError,
+  isBootstrappedOwnerEmail,
   OperationType,
 } from './firebase';
 
@@ -71,8 +84,7 @@ export async function resolveStaffUser(
   const path = `staff/${uid}`;
   try {
     const snap = await getDoc(doc(db, 'staff', uid));
-    const isBootstrappedOwner =
-      email.toLowerCase() === BOOTSTRAPPED_OWNER_EMAIL.toLowerCase();
+    const isBootstrappedOwner = isBootstrappedOwnerEmail(email);
 
     if (snap.exists()) {
       const data = snap.data() as Partial<StaffAccount>;
@@ -538,9 +550,10 @@ export async function saveMember(
   const id = existingId || makeDocId('mem');
   const path = `members/${id}`;
   const cleanPayload = {
+    userUid: (data.userUid || '').slice(0, 128),
     fullName: data.fullName.slice(0, 100),
     phone: data.phone.slice(0, 20),
-    email: data.email.slice(0, 160),
+    email: normalizeEmail(data.email || ''),
     joiningDate: data.joiningDate,
     planId: data.planId.slice(0, 128),
     planName: data.planName.slice(0, 100),
@@ -1218,6 +1231,398 @@ export async function removeStaffAccount(
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
+}
+
+// Member Self-Service Portal (Gmail-authenticated)
+export function subscribeMyMemberRecords(
+  uid: string,
+  verifiedEmail: string,
+  onData: (rows: GymMember[]) => void,
+): Unsubscribe {
+  const path = 'members';
+  const normalizedEmail = normalizeEmail(verifiedEmail);
+  let byUidRows: GymMember[] = [];
+  let byEmailRows: GymMember[] = [];
+
+  const emitMerged = () => {
+    const merged = new Map<string, GymMember>();
+    for (const row of byEmailRows) merged.set(row.id, row);
+    for (const row of byUidRows) merged.set(row.id, row);
+    onData(Array.from(merged.values()));
+  };
+
+  const qUid = query(
+    collection(db, path),
+    where('archivedAt', '==', ''),
+    where('userUid', '==', uid),
+  );
+  const unsubUid = onSnapshot(
+    qUid,
+    (snap) => {
+      byUidRows = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<GymMember, 'id'>),
+      }));
+      emitMerged();
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    },
+  );
+
+  let unsubEmail: Unsubscribe = () => {};
+  if (normalizedEmail) {
+    const qEmail = query(
+      collection(db, path),
+      where('archivedAt', '==', ''),
+      where('email', '==', normalizedEmail),
+    );
+    unsubEmail = onSnapshot(
+      qEmail,
+      (snap) => {
+        byEmailRows = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<GymMember, 'id'>),
+        }));
+        emitMerged();
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.LIST, path);
+      },
+    );
+  }
+
+  return () => {
+    unsubUid();
+    unsubEmail();
+  };
+}
+
+export function subscribeMyMembershipRequests(
+  uid: string,
+  onData: (rows: MembershipRequestRecord[]) => void,
+): Unsubscribe {
+  const path = 'membershipRequests';
+  const q = query(collection(db, path), where('userUid', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const rows = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<MembershipRequestRecord, 'id'>),
+      }));
+      onData(rows);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    },
+  );
+}
+
+export async function submitMembershipRequest(
+  uid: string,
+  verifiedEmail: string,
+  payload: {
+    fullName: string;
+    phone: string;
+    claimType: 'Existing Member' | 'New or Renewal';
+    planName: string;
+    monthsRequested: number;
+    existingStartDate: string;
+    notes: string;
+    consentAccepted: boolean;
+  },
+): Promise<string> {
+  const id = makeDocId('req');
+  const path = `membershipRequests/${id}`;
+  const months = Math.min(36, Math.max(1, Math.round(payload.monthsRequested)));
+  try {
+    await setDoc(doc(db, 'membershipRequests', id), {
+      userUid: uid,
+      email: normalizeEmail(verifiedEmail),
+      fullName: payload.fullName.trim().slice(0, 100),
+      phone: payload.phone.trim().slice(0, 20),
+      claimType: payload.claimType,
+      planName: payload.planName.trim().slice(0, 100),
+      monthsRequested: months,
+      existingStartDate: payload.existingStartDate.trim().slice(0, 10),
+      notes: payload.notes.trim().slice(0, 500),
+      consentAccepted: Boolean(payload.consentAccepted),
+      status: 'Pending',
+      approvedMonths: 0,
+      approvedBy: '',
+      reviewerNotes: '',
+      linkedMemberId: '',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function approveMembershipRequest(
+  req: MembershipRequestRecord,
+  approval: {
+    approvedMonths: number;
+    startDate: string;
+    planId: string;
+    planName: string;
+    paymentStatus: PaymentStatus;
+    memberStatus: MemberStatus;
+    assignedTrainerId: string;
+    existingMemberId?: string;
+    existingJoiningDate?: string;
+    reviewerNotes: string;
+    planExistsInCatalog: boolean;
+  },
+  actor: StaffSessionUser,
+): Promise<string> {
+  const safeMonths = Math.min(36, Math.max(1, Math.round(approval.approvedMonths)));
+  const expiryDate = addMonthsToIsoDate(approval.startDate, safeMonths);
+  const memberId = approval.existingMemberId || makeDocId('mem');
+  const memberPath = `members/${memberId}`;
+
+  try {
+    const memberPayload = {
+      userUid: req.userUid,
+      fullName: req.fullName.slice(0, 100),
+      phone: req.phone.slice(0, 20),
+      email: normalizeEmail(req.email),
+      joiningDate: approval.existingJoiningDate || approval.startDate,
+      planId: (approval.planId || `custom_${safeMonths}m`).slice(0, 128),
+      planName: (approval.planName || `${safeMonths} Month Membership`).slice(0, 100),
+      startDate: approval.startDate,
+      expiryDate,
+      paymentStatus: approval.paymentStatus,
+      memberStatus: approval.memberStatus,
+      assignedTrainerId: (approval.assignedTrainerId || '').slice(0, 128),
+      consentConfirmed: true,
+      archivedAt: '',
+      notes: approval.reviewerNotes
+        ? `Approved for ${safeMonths} month(s): ${approval.reviewerNotes}`.slice(0, 500)
+        : `Approved via Gmail member request (${safeMonths} month(s))`,
+    };
+
+    if (approval.existingMemberId) {
+      await updateDoc(doc(db, 'members', memberId), {
+        ...memberPayload,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(doc(db, 'members', memberId), {
+        ...memberPayload,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    if (approval.planExistsInCatalog && approval.planId) {
+      const mshId = makeDocId('msh');
+      await setDoc(doc(db, 'memberships', mshId), {
+        memberId,
+        memberName: memberPayload.fullName,
+        planId: approval.planId,
+        planName: memberPayload.planName,
+        startAt: approval.startDate,
+        endAt: expiryDate,
+        status: approval.memberStatus === 'Active' ? 'Active' : 'Paused',
+        actorUid: actor.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    await updateDoc(doc(db, 'membershipRequests', req.id), {
+      status: 'Approved',
+      approvedMonths: safeMonths,
+      approvedBy: actor.email.slice(0, 160),
+      reviewerNotes: approval.reviewerNotes.trim().slice(0, 300),
+      linkedMemberId: memberId,
+      planName: memberPayload.planName,
+      updatedAt: serverTimestamp(),
+    });
+
+    await recordAuditEvent(actor, {
+      action: 'membershipRequest.approved',
+      resourceType: 'membershipRequest',
+      resourceId: req.id,
+      changedFields: ['status', 'approvedMonths', 'linkedMemberId'],
+      reason: `Approved ${safeMonths} month(s) until ${expiryDate}`,
+    });
+
+    return memberId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, memberPath);
+  }
+}
+
+export async function rejectMembershipRequest(
+  requestId: string,
+  reviewerNotes: string,
+  actor: StaffSessionUser,
+): Promise<void> {
+  const path = `membershipRequests/${requestId}`;
+  try {
+    await updateDoc(doc(db, 'membershipRequests', requestId), {
+      status: 'Rejected',
+      approvedMonths: 0,
+      approvedBy: actor.email.slice(0, 160),
+      reviewerNotes: reviewerNotes.trim().slice(0, 300),
+      updatedAt: serverTimestamp(),
+    });
+    await recordAuditEvent(actor, {
+      action: 'membershipRequest.rejected',
+      resourceType: 'membershipRequest',
+      resourceId: requestId,
+      changedFields: ['status', 'reviewerNotes'],
+      reason: reviewerNotes,
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function removeMembershipRequest(
+  requestId: string,
+  actor?: StaffSessionUser,
+): Promise<void> {
+  const path = `membershipRequests/${requestId}`;
+  try {
+    await deleteDoc(doc(db, 'membershipRequests', requestId));
+    if (actor) {
+      await recordAuditEvent(actor, {
+        action: 'membershipRequest.deleted',
+        resourceType: 'membershipRequest',
+        resourceId: requestId,
+        changedFields: ['deleted'],
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+const recordedLoginSessions = new Set<string>();
+const LOGIN_SESSION_PREFIX = 'assure_login_recorded:';
+
+export async function recordLoginEvent(payload: {
+  uid: string;
+  email: string;
+  displayName?: string;
+  role: LoginEventRole;
+  portal: LoginPortal;
+  method: LoginMethod;
+}): Promise<string> {
+  const id = makeDocId('lgn');
+  const path = `loginEvents/${id}`;
+  try {
+    await setDoc(doc(db, 'loginEvents', id), {
+      uid: payload.uid.slice(0, 128),
+      email: normalizeEmail(payload.email),
+      displayName: (payload.displayName || '').trim().slice(0, 100),
+      role: payload.role,
+      portal: payload.portal,
+      method: payload.method,
+      occurredAt: serverTimestamp(),
+    });
+    return id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function recordLoginEventOncePerSession(payload: {
+  uid: string;
+  email: string;
+  displayName?: string;
+  role: LoginEventRole;
+  portal: LoginPortal;
+  method: LoginMethod;
+}): Promise<void> {
+  if (!payload.uid || !payload.email) return;
+  const key = `${payload.portal}:${payload.uid}:${payload.role}`;
+  if (recordedLoginSessions.has(key)) return;
+  try {
+    if (
+      typeof window !== 'undefined' &&
+      window.sessionStorage.getItem(`${LOGIN_SESSION_PREFIX}${key}`) === '1'
+    ) {
+      recordedLoginSessions.add(key);
+      return;
+    }
+  } catch {
+    // Ignore storage restriction errors in sandboxed iframes
+  }
+
+  recordedLoginSessions.add(key);
+  try {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(`${LOGIN_SESSION_PREFIX}${key}`, '1');
+    }
+  } catch {
+    // Ignore storage restriction errors
+  }
+
+  try {
+    await recordLoginEvent(payload);
+  } catch (err) {
+    recordedLoginSessions.delete(key);
+    try {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(`${LOGIN_SESSION_PREFIX}${key}`);
+      }
+    } catch {
+      // Ignore
+    }
+    console.warn('Unable to log portal sign-in event:', err);
+  }
+}
+
+export function clearLoginSessionMarkers(): void {
+  recordedLoginSessions.clear();
+  try {
+    if (typeof window !== 'undefined') {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.sessionStorage.length; i++) {
+        const k = window.sessionStorage.key(i);
+        if (k && k.startsWith(LOGIN_SESSION_PREFIX)) {
+          keysToRemove.push(k);
+        }
+      }
+      for (const k of keysToRemove) {
+        window.sessionStorage.removeItem(k);
+      }
+    }
+  } catch {
+    // Ignore storage restriction errors
+  }
+}
+
+export function subscribeLoginEvents(
+  onData: (rows: LoginEventRecord[]) => void,
+  maxRows = 50,
+): Unsubscribe {
+  const path = 'loginEvents';
+  const q = query(
+    collection(db, path),
+    orderBy('occurredAt', 'desc'),
+    limit(Math.min(100, Math.max(1, maxRows))),
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const rows = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<LoginEventRecord, 'id'>),
+      }));
+      onData(rows);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    },
+  );
 }
 
 export type { AuditEventRecord };

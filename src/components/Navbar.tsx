@@ -4,10 +4,17 @@ import { BUSINESS_INFO, NAV_LINKS } from '../data/clubData';
 
 interface NavbarProps {
   onJoinClick: () => void;
+  onNavigateMember: () => void;
+  onNavigateTrainer: () => void;
   announcement?: string | null;
 }
 
-export default function Navbar({ onJoinClick, announcement }: NavbarProps) {
+export default function Navbar({
+  onJoinClick,
+  onNavigateMember,
+  onNavigateTrainer,
+  announcement,
+}: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -37,7 +44,7 @@ export default function Navbar({ onJoinClick, announcement }: NavbarProps) {
           {announcement}
         </div>
       )}
-      <div className="mx-auto flex h-16 max-w-[1320px] items-center justify-between gap-8 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 max-w-[1320px] items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
         <a
           href="#home"
           onClick={handleNavClick}
@@ -48,7 +55,7 @@ export default function Navbar({ onJoinClick, announcement }: NavbarProps) {
 
         <nav
           aria-label="Primary navigation"
-          className="hidden lg:flex items-center gap-7 text-sm font-medium text-[#A1A1AA]"
+          className="hidden lg:flex items-center gap-6 text-sm font-medium text-[#A1A1AA]"
         >
           {NAV_LINKS.map((link) => (
             <a
@@ -62,6 +69,17 @@ export default function Navbar({ onJoinClick, announcement }: NavbarProps) {
         </nav>
 
         <div className="flex items-center gap-3 shrink-0">
+          <a
+            href="/member"
+            onClick={(e) => {
+              e.preventDefault();
+              setMobileOpen(false);
+              onNavigateMember();
+            }}
+            className="hidden sm:inline-flex items-center justify-center rounded-md border border-white/15 bg-[#111111]/80 px-3.5 py-2 text-xs font-semibold text-white hover:border-[#FF5A1F] hover:text-[#FF5A1F] transition-colors duration-150 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F]"
+          >
+            Member Login
+          </a>
           <button
             type="button"
             onClick={() => {
@@ -105,7 +123,31 @@ export default function Navbar({ onJoinClick, announcement }: NavbarProps) {
               </li>
             ))}
           </ul>
-          <div className="mt-4 pt-4 border-t border-white/10">
+          <div className="mt-4 pt-4 border-t border-white/10 space-y-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              <a
+                href="/member"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setMobileOpen(false);
+                  onNavigateMember();
+                }}
+                className="flex min-h-[44px] items-center justify-center rounded-md border border-white/15 bg-[#111111] px-3 text-xs font-semibold text-white hover:border-[#FF5A1F] transition-colors"
+              >
+                Member Login
+              </a>
+              <a
+                href="/trainer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setMobileOpen(false);
+                  onNavigateTrainer();
+                }}
+                className="flex min-h-[44px] items-center justify-center rounded-md border border-white/15 bg-[#111111] px-3 text-xs font-semibold text-[#A1A1AA] hover:border-[#FF5A1F] hover:text-white transition-colors"
+              >
+                Trainer Portal
+              </a>
+            </div>
             <button
               type="button"
               onClick={() => {

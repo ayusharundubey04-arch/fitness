@@ -2,18 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addDaysToIsoDate,
+  addMonthsToIsoDate,
   buildMembersCsv,
+  buildRecentActivityFeed,
   computeDashboardMetrics,
+  computeMembershipValidity,
   computePaymentAmounts,
   daysUntilDate,
+  extractTimestampMillis,
+  formatActivityTimestamp,
   generateReceiptHtml,
   hasSameDayAttendance,
+  normalizeEmail,
   projectMemberForTrainer,
 } from './adminLogic';
 import type {
   AttendanceRecord,
   EnquiryRecord,
   GymMember,
+  LoginEventRecord,
+  MembershipRequestRecord,
   PaymentRecord,
 } from '../types/gym';
 
@@ -22,10 +30,45 @@ test('addDaysToIsoDate computes accurate membership expiry dates', () => {
   assert.equal(addDaysToIsoDate('2026-01-31', 90), '2026-05-01');
 });
 
+test('addMonthsToIsoDate adds calendar months and clamps month-end dates properly', () => {
+  assert.equal(addMonthsToIsoDate('2026-11-16', 1), '2026-12-16');
+  assert.equal(addMonthsToIsoDate('2026-11-16', 3), '2027-02-16');
+  assert.equal(addMonthsToIsoDate('2026-01-31', 1), '2026-02-28');
+  assert.equal(addMonthsToIsoDate('2024-01-31', 1), '2024-02-29');
+  assert.equal(addMonthsToIsoDate('2026-11-16', 12), '2027-11-16');
+});
+
 test('daysUntilDate calculates positive, zero, and negative day deltas', () => {
   assert.equal(daysUntilDate('2026-11-20', '2026-11-13'), 7);
   assert.equal(daysUntilDate('2026-11-13', '2026-11-13'), 0);
   assert.equal(daysUntilDate('2026-11-10', '2026-11-13'), -3);
+});
+
+test('computeMembershipValidity reports remaining days, expiring soon, expired, and paused states', () => {
+  const valid = computeMembershipValidity('2026-12-20', 'Active', '2026-11-16');
+  assert.equal(valid.daysRemaining, 34);
+  assert.equal(valid.isExpired, false);
+  assert.equal(valid.isExpiringSoon, false);
+  assert.equal(valid.badgeTone, 'emerald');
+  assert.match(valid.validityLabel, /34 days/);
+
+  const soon = computeMembershipValidity('2026-11-21', 'Active', '2026-11-16');
+  assert.equal(soon.daysRemaining, 5);
+  assert.equal(soon.isExpiringSoon, true);
+  assert.equal(soon.badgeTone, 'amber');
+
+  const expired = computeMembershipValidity('2026-11-10', 'Active', '2026-11-16');
+  assert.equal(expired.isExpired, true);
+  assert.equal(expired.badgeTone, 'red');
+  assert.match(expired.validityLabel, /6 days ago/);
+
+  const paused = computeMembershipValidity('2026-12-20', 'Paused', '2026-11-16');
+  assert.equal(paused.badgeTone, 'zinc');
+  assert.match(paused.validityLabel, /paused/i);
+});
+
+test('normalizeEmail trims and lowercases email addresses', () => {
+  assert.equal(normalizeEmail('  Test.Member@Gmail.COM  '), 'test.member@gmail.com');
 });
 
 test('computePaymentAmounts derives pending balance and status accurately', () => {
@@ -283,4 +326,76 @@ test('generateReceiptHtml escapes HTML, masks unverified phone, and includes dis
   assert.match(html, /AFC-20261113-9001/);
   assert.match(html, /Pending owner verification/);
   assert.match(html, /does not represent an automated online payment gateway settlement/i);
+});
+
+test('extractTimestampMillis and formatActivityTimestamp handle Firestore timestamps and seconds objects', () => {
+  assert.equal(extractTimestampMillis({ toMillis: () => 1763290000000 }), 1763290000000);
+  assert.equal(extractTimestampMillis({ seconds: 1763290000, nanoseconds: 0 }), 1763290000000);
+  assert.equal(extractTimestampMillis(undefined), 0);
+  assert.equal(formatActivityTimestamp(1763290000000, 1763290020000), 'Just now');
+  assert.equal(formatActivityTimestamp(1763290000000, 1763290300000), '5m ago');
+});
+
+test('buildRecentActivityFeed merges membership approvals and portal logins newest-first', () => {
+  const requests: MembershipRequestRecord[] = [
+    {
+      id: 'req_1',
+      userUid: 'u1',
+      email: 'rahul@gmail.com',
+      fullName: 'Rahul Patel',
+      phone: '+919898989533',
+      claimType: 'Existing Member',
+      planName: 'Quarterly Commitment',
+      monthsRequested: 3,
+      existingStartDate: '2026-11-01',
+      notes: '',
+      consentAccepted: true,
+      status: 'Approved',
+      approvedMonths: 3,
+      approvedBy: 'admin@google.com',
+      reviewerNotes: 'Verified at reception',
+      linkedMemberId: 'mem_1',
+      updatedAt: { toMillis: () => 2000 },
+    },
+    {
+      id: 'req_2',
+      userUid: 'u2',
+      email: 'neha@gmail.com',
+      fullName: 'Neha Shah',
+      phone: '+919898989534',
+      claimType: 'New or Renewal',
+      planName: 'Monthly Access',
+      monthsRequested: 1,
+      existingStartDate: '',
+      notes: '',
+      consentAccepted: true,
+      status: 'Pending',
+      approvedMonths: 0,
+      approvedBy: '',
+      reviewerNotes: '',
+      linkedMemberId: '',
+      createdAt: { toMillis: () => 500 },
+    },
+  ];
+  const logins: LoginEventRecord[] = [
+    {
+      id: 'lgn_1',
+      uid: 'u_admin',
+      email: 'admin@google.com',
+      displayName: 'Club Owner',
+      role: 'owner',
+      portal: 'admin',
+      method: 'password',
+      occurredAt: { toMillis: () => 3000 },
+    },
+  ];
+
+  const feed = buildRecentActivityFeed(requests, logins, 10);
+  assert.equal(feed.length, 3);
+  assert.equal(feed[0].category, 'login');
+  assert.match(feed[0].title, /Club Owner/);
+  assert.equal(feed[0].badgeLabel, 'OWNER · /admin');
+  assert.equal(feed[1].category, 'approval');
+  assert.equal(feed[1].badgeLabel, 'Approved · 3m');
+  assert.equal(feed[2].badgeLabel, 'Pending Review');
 });

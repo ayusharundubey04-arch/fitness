@@ -10,7 +10,14 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export const BOOTSTRAPPED_OWNER_EMAIL = 'ayusharundubey04@gmail.com';
+export const BOOTSTRAPPED_OWNER_EMAILS = [BOOTSTRAPPED_OWNER_EMAIL];
 export const BOOTSTRAPPED_ADMIN_EMAIL = BOOTSTRAPPED_OWNER_EMAIL;
+
+export function isBootstrappedOwnerEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  return BOOTSTRAPPED_OWNER_EMAILS.some((e) => e.toLowerCase() === normalized);
+}
 
 export enum OperationType {
   CREATE = 'create',

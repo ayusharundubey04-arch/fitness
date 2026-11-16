@@ -16,9 +16,11 @@ export interface StaffAccount {
 
 export type PaymentStatus = 'Paid' | 'Pending' | 'Partial' | 'Refunded';
 export type MemberStatus = 'Active' | 'Expired' | 'Paused';
+export type MembershipRequestStatus = 'Pending' | 'Approved' | 'Rejected';
 
 export interface GymMember {
   id: string;
+  userUid?: string;
   fullName: string;
   phone: string;
   email: string;
@@ -33,6 +35,27 @@ export interface GymMember {
   consentConfirmed: boolean;
   archivedAt: string;
   notes: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface MembershipRequestRecord {
+  id: string;
+  userUid: string;
+  email: string;
+  fullName: string;
+  phone: string;
+  claimType: 'Existing Member' | 'New or Renewal';
+  planName: string;
+  monthsRequested: number;
+  existingStartDate: string;
+  notes: string;
+  consentAccepted: boolean;
+  status: MembershipRequestStatus;
+  approvedMonths: number;
+  approvedBy: string;
+  reviewerNotes: string;
+  linkedMemberId: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -196,6 +219,21 @@ export interface AuditEventRecord {
   changedFields: string[];
   reason: string;
   requestId: string;
+  occurredAt?: unknown;
+}
+
+export type LoginPortal = 'admin' | 'trainer' | 'member';
+export type LoginMethod = 'google' | 'password';
+export type LoginEventRole = StaffRole | 'member';
+
+export interface LoginEventRecord {
+  id: string;
+  uid: string;
+  email: string;
+  displayName: string;
+  role: LoginEventRole;
+  portal: LoginPortal;
+  method: LoginMethod;
   occurredAt?: unknown;
 }
 

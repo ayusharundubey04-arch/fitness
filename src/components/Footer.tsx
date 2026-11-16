@@ -1,4 +1,4 @@
-import { ExternalLink, Lock, MessageCircle, Phone, X } from 'lucide-react';
+import { Dumbbell, ExternalLink, Lock, MessageCircle, Phone, UserCheck, X } from 'lucide-react';
 import { BUSINESS_INFO, NAV_LINKS } from '../data/clubData';
 import type { SiteSettingsRecord } from '../types/gym';
 import { buildWhatsAppEnquiryUrl } from '../utils/clubLogic';
@@ -6,6 +6,8 @@ import { buildWhatsAppEnquiryUrl } from '../utils/clubLogic';
 interface FooterProps {
   settings?: SiteSettingsRecord | null;
   onOpenAdmin: () => void;
+  onOpenMember: () => void;
+  onOpenTrainer: () => void;
   legalModalTab: 'privacy' | 'terms' | null;
   onOpenLegalModal: (tab: 'privacy' | 'terms' | null) => void;
 }
@@ -13,6 +15,8 @@ interface FooterProps {
 export default function Footer({
   settings,
   onOpenAdmin,
+  onOpenMember,
+  onOpenTrainer,
   legalModalTab,
   onOpenLegalModal,
 }: FooterProps) {
@@ -146,14 +150,36 @@ export default function Footer({
                     Terms &amp; Pre-Launch Notice (Draft)
                   </button>
                 </li>
-                <li className="pt-2 border-t border-white/10">
+                <li className="pt-2 border-t border-white/10 space-y-2">
+                  <a
+                    href="/member"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onOpenMember();
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-medium text-white hover:text-[#FF5A1F] transition-colors"
+                  >
+                    <UserCheck className="h-3.5 w-3.5 text-[#FF5A1F]" aria-hidden="true" />
+                    <span>Member Validity Portal</span>
+                  </a>
+                  <a
+                    href="/trainer"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onOpenTrainer();
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-[#FF5A1F] transition-colors"
+                  >
+                    <Dumbbell className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Trainer Portal</span>
+                  </a>
                   <a
                     href="/admin"
                     onClick={(e) => {
                       e.preventDefault();
                       onOpenAdmin();
                     }}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-[#FF5A1F] transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-medium text-[#A1A1AA] hover:text-[#FF5A1F] transition-colors"
                   >
                     <Lock className="h-3 w-3" aria-hidden="true" />
                     <span>Operations &amp; Staff Portal</span>

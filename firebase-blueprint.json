@@ -21,6 +21,7 @@
       "description": "Private gym member profile with trainer assignment, consent flag, and archive status.",
       "type": "object",
       "properties": {
+        "userUid": { "type": "string", "maxLength": 128 },
         "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
         "phone": { "type": "string", "minLength": 8, "maxLength": 20 },
         "email": { "type": "string", "maxLength": 160 },
@@ -61,6 +62,36 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["memberId", "memberName", "planId", "planName", "startAt", "endAt", "status", "actorUid", "createdAt", "updatedAt"]
+    },
+    "MembershipRequest": {
+      "title": "MembershipRequest",
+      "description": "Gmail-authenticated member claim or renewal request awaiting owner/staff approval for N months.",
+      "type": "object",
+      "properties": {
+        "userUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "phone": { "type": "string", "minLength": 8, "maxLength": 20 },
+        "claimType": { "type": "string", "enum": ["Existing Member", "New or Renewal"] },
+        "planName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "monthsRequested": { "type": "number" },
+        "existingStartDate": { "type": "string", "maxLength": 10 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "consentAccepted": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "approvedMonths": { "type": "number" },
+        "approvedBy": { "type": "string", "maxLength": 160 },
+        "reviewerNotes": { "type": "string", "maxLength": 300 },
+        "linkedMemberId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userUid", "email", "fullName", "phone", "claimType", "planName",
+        "monthsRequested", "existingStartDate", "notes", "consentAccepted",
+        "status", "approvedMonths", "approvedBy", "reviewerNotes", "linkedMemberId",
+        "createdAt", "updatedAt"
+      ]
     },
     "MembershipPlan": {
       "title": "MembershipPlan",
@@ -263,6 +294,21 @@
         "resourceId", "changedFields", "reason", "requestId", "occurredAt"
       ]
     },
+    "LoginEvent": {
+      "title": "LoginEvent",
+      "description": "Append-only portal sign-in log tracking Admin, Trainer, and Member logins.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["owner", "staff", "trainer", "member"] },
+        "portal": { "type": "string", "enum": ["admin", "trainer", "member"] },
+        "method": { "type": "string", "enum": ["google", "password"] },
+        "occurredAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "portal", "method", "occurredAt"]
+    },
     "SiteSettingsPublic": {
       "title": "SiteSettingsPublic",
       "description": "Public site configuration with explicit per-fact approval booleans.",
@@ -313,6 +359,10 @@
       "schema": { "$ref": "#/entities/Membership" },
       "description": "Assigned membership terms linking members and membership plans."
     },
+    "/membershipRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/MembershipRequest" },
+      "description": "Member-submitted Gmail claims and renewal requests pending owner/admin approval for a specified number of months."
+    },
     "/membershipPlans/{planId}": {
       "schema": { "$ref": "#/entities/MembershipPlan" },
       "description": "Membership plans; publicly visible only when active, publicVisibility, and owner-approved."
@@ -344,6 +394,10 @@
     "/auditEvents/{eventId}": {
       "schema": { "$ref": "#/entities/AuditEvent" },
       "description": "Append-only audit trail readable exclusively by owner."
+    },
+    "/loginEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/LoginEvent" },
+      "description": "Append-only sign-in event log readable by owner and desk staff."
     },
     "/settings/{settingId}": {
       "schema": { "$ref": "#/entities/SiteSettingsPublic" },

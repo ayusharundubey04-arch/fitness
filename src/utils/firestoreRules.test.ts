@@ -37,22 +37,28 @@ test('firestore.rules enforces approval gates for plans, trainers, gallery, and 
   );
 });
 
-test('firestore.rules locks PII collections, enforces consent on public enquiries, and makes attendance & auditEvents append-only', () => {
+test('firestore.rules locks PII collections, enforces member self-read & consent on requests/enquiries, and makes attendance, auditEvents & loginEvents append-only', () => {
   assert.match(rulesText, /match \/members\/\{memberId\}[\s\S]*isTrainer\(\) && existing\(\)\.archivedAt == '' && isAssignedTrainerMember\(existing\(\)\)/);
+  assert.match(rulesText, /match \/members\/\{memberId\}[\s\S]*existing\(\)\.email == request\.auth\.token\.email/);
+  assert.match(rulesText, /match \/membershipRequests\/\{requestId\}[\s\S]*incoming\(\)\.userUid == request\.auth\.uid[\s\S]*incoming\(\)\.status == 'Pending'[\s\S]*incoming\(\)\.approvedMonths == 0/);
   assert.match(rulesText, /match \/payments\/\{paymentId\}[\s\S]*allow update: if isOwner\(\)/);
   assert.match(rulesText, /match \/attendance\/\{attendanceId\}[\s\S]*allow update, delete: if false;/);
   assert.match(rulesText, /match \/auditEvents\/\{eventId\}[\s\S]*allow update, delete: if false;/);
+  assert.match(
+    rulesText,
+    /match \/loginEvents\/\{eventId\}[\s\S]*allow list: if isStaff\(\);[\s\S]*incoming\(\)\.uid == request\.auth\.uid[\s\S]*incoming\(\)\.email == request\.auth\.token\.email[\s\S]*allow update, delete: if false;/,
+  );
   assert.match(
     rulesText,
     /incoming\(\)\.consentAccepted == true[\s\S]*incoming\(\)\.status == 'New'\s*&& incoming\(\)\.internalNotes == ''/,
   );
 });
 
-test('firestore.rules enforces strict field allowlists (hasOnly + affectedKeys) across all 12 collections', () => {
+test('firestore.rules enforces strict field allowlists (hasOnly + affectedKeys) across all 14 collections', () => {
   const hasOnlyMatches = rulesText.match(/\.keys\(\)\.hasOnly\(/g) || [];
   const affectedMatches = rulesText.match(/\.affectedKeys\(\)\.hasOnly\(/g) || [];
-  assert.ok(hasOnlyMatches.length >= 12, 'All 12 collection validators must check keys().hasOnly');
-  assert.ok(affectedMatches.length >= 9, 'Mutable update rules must restrict affectedKeys().hasOnly');
+  assert.ok(hasOnlyMatches.length >= 14, 'All 14 collection validators must check keys().hasOnly');
+  assert.ok(affectedMatches.length >= 10, 'Mutable update rules must restrict affectedKeys().hasOnly');
   assert.match(rulesText, /incoming\(\)\.createdAt == request\.time/);
   assert.match(rulesText, /incoming\(\)\.updatedAt == request\.time/);
 });

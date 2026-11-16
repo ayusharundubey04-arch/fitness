@@ -2,6 +2,8 @@ import type {
   AttendanceRecord,
   EnquiryRecord,
   GymMember,
+  LoginEventRecord,
+  MembershipRequestRecord,
   MemberStatus,
   PaymentRecord,
   PaymentStatus,
@@ -18,11 +20,97 @@ export function addDaysToIsoDate(isoDate: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+export function addMonthsToIsoDate(isoDate: string, months: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!match) return isoDate;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const safeMonths = Math.max(1, Math.round(months));
+  const targetMonthIndex = month + safeMonths;
+  const targetYear = year + Math.floor(targetMonthIndex / 12);
+  const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(targetYear, normalizedMonth + 1, 0),
+  ).getUTCDate();
+  const clampedDay = Math.min(day, lastDayOfTargetMonth);
+  return new Date(Date.UTC(targetYear, normalizedMonth, clampedDay))
+    .toISOString()
+    .slice(0, 10);
+}
+
 export function daysUntilDate(targetIsoDate: string, referenceIsoDate: string): number {
   const t = Date.parse(`${targetIsoDate}T00:00:00Z`);
   const r = Date.parse(`${referenceIsoDate}T00:00:00Z`);
   if (Number.isNaN(t) || Number.isNaN(r)) return 9999;
   return Math.round((t - r) / (1000 * 60 * 60 * 24));
+}
+
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase().slice(0, 160);
+}
+
+export interface MembershipValiditySummary {
+  daysRemaining: number;
+  isExpired: boolean;
+  isExpiringSoon: boolean;
+  validityLabel: string;
+  badgeTone: 'emerald' | 'amber' | 'red' | 'zinc';
+}
+
+export function computeMembershipValidity(
+  expiryDate: string,
+  memberStatus: MemberStatus,
+  referenceIsoDate: string,
+): MembershipValiditySummary {
+  const daysRemaining = daysUntilDate(expiryDate, referenceIsoDate);
+  if (memberStatus === 'Paused') {
+    return {
+      daysRemaining,
+      isExpired: false,
+      isExpiringSoon: false,
+      validityLabel: 'Membership paused',
+      badgeTone: 'zinc',
+    };
+  }
+  if (memberStatus === 'Expired' || daysRemaining < 0) {
+    const overdueDays = Math.abs(daysRemaining);
+    return {
+      daysRemaining,
+      isExpired: true,
+      isExpiringSoon: false,
+      validityLabel:
+        daysRemaining < 0
+          ? `Expired ${overdueDays} day${overdueDays === 1 ? '' : 's'} ago`
+          : 'Membership expired',
+      badgeTone: 'red',
+    };
+  }
+  if (daysRemaining === 0) {
+    return {
+      daysRemaining: 0,
+      isExpired: false,
+      isExpiringSoon: true,
+      validityLabel: 'Expires today (0 days left)',
+      badgeTone: 'amber',
+    };
+  }
+  if (daysRemaining <= 14) {
+    return {
+      daysRemaining,
+      isExpired: false,
+      isExpiringSoon: true,
+      validityLabel: `Valid for ${daysRemaining} more day${daysRemaining === 1 ? '' : 's'}`,
+      badgeTone: 'amber',
+    };
+  }
+  return {
+    daysRemaining,
+    isExpired: false,
+    isExpiringSoon: false,
+    validityLabel: `Valid for ${daysRemaining} days`,
+    badgeTone: 'emerald',
+  };
 }
 
 export function computePaymentAmounts(totalAmount: number, paidAmount: number): {
@@ -283,4 +371,146 @@ export function generateReceiptHtml(
   </div>
 </body>
 </html>`;
+}
+
+export function extractTimestampMillis(ts: unknown): number {
+  if (!ts) return 0;
+  if (typeof ts === 'number' && Number.isFinite(ts)) return ts;
+  if (ts instanceof Date) return Number.isNaN(ts.getTime()) ? 0 : ts.getTime();
+  if (typeof ts === 'string') {
+    const parsed = Date.parse(ts);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (typeof ts === 'object') {
+    const maybeObj = ts as {
+      toMillis?: () => number;
+      seconds?: number;
+      nanoseconds?: number;
+    };
+    if (typeof maybeObj.toMillis === 'function') {
+      const ms = maybeObj.toMillis();
+      return Number.isFinite(ms) ? ms : 0;
+    }
+    if (typeof maybeObj.seconds === 'number' && Number.isFinite(maybeObj.seconds)) {
+      const ns = typeof maybeObj.nanoseconds === 'number' ? maybeObj.nanoseconds : 0;
+      return Math.round(maybeObj.seconds * 1000 + ns / 1_000_000);
+    }
+  }
+  return 0;
+}
+
+export function formatActivityTimestamp(
+  timestampMs: number,
+  nowMs = Date.now(),
+): string {
+  if (!timestampMs || timestampMs <= 0) return 'Just now';
+  const diffSec = Math.round((nowMs - timestampMs) / 1000);
+  if (diffSec >= 0 && diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin >= 1 && diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours >= 1 && diffHours < 24) return `${diffHours}h ago`;
+
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(timestampMs));
+}
+
+export interface RecentActivityItem {
+  id: string;
+  category: 'approval' | 'login';
+  title: string;
+  subtitle: string;
+  actorLabel: string;
+  badgeLabel: string;
+  badgeTone: 'emerald' | 'amber' | 'red' | 'orange' | 'zinc';
+  timestampMs: number;
+  targetTab?: 'approvals' | 'members';
+}
+
+export function buildRecentActivityFeed(
+  requests: MembershipRequestRecord[],
+  loginEvents: LoginEventRecord[],
+  limitCount = 25,
+): RecentActivityItem[] {
+  const approvalItems: RecentActivityItem[] = requests
+    .filter((req) => req.status === 'Approved' || req.status === 'Rejected' || req.status === 'Pending')
+    .map((req) => {
+      const timestampMs =
+        extractTimestampMillis(req.updatedAt) ||
+        extractTimestampMillis(req.createdAt) ||
+        (req.existingStartDate ? extractTimestampMillis(`${req.existingStartDate}T00:00:00Z`) : 0);
+
+      if (req.status === 'Approved') {
+        const months = req.approvedMonths || req.monthsRequested;
+        return {
+          id: `approval_${req.id}`,
+          category: 'approval',
+          title: `Approved ${req.fullName}`,
+          subtitle: `${months} month${months === 1 ? '' : 's'} · ${req.planName}${req.reviewerNotes ? ` · ${req.reviewerNotes}` : ''}`,
+          actorLabel: req.approvedBy ? `Approved by ${req.approvedBy}` : req.email,
+          badgeLabel: `Approved · ${months}m`,
+          badgeTone: 'emerald',
+          timestampMs,
+          targetTab: 'approvals',
+        };
+      }
+
+      if (req.status === 'Rejected') {
+        return {
+          id: `approval_${req.id}`,
+          category: 'approval',
+          title: `Declined ${req.fullName}`,
+          subtitle: `${req.planName}${req.reviewerNotes ? ` · ${req.reviewerNotes}` : ''}`,
+          actorLabel: req.approvedBy ? `Reviewed by ${req.approvedBy}` : req.email,
+          badgeLabel: 'Declined',
+          badgeTone: 'red',
+          timestampMs,
+          targetTab: 'approvals',
+        };
+      }
+
+      return {
+        id: `approval_${req.id}`,
+        category: 'approval',
+        title: `Pending Claim · ${req.fullName}`,
+        subtitle: `${req.claimType} · ${req.monthsRequested} month${req.monthsRequested === 1 ? '' : 's'} · ${req.planName}`,
+        actorLabel: req.email,
+        badgeLabel: 'Pending Review',
+        badgeTone: 'amber',
+        timestampMs,
+        targetTab: 'approvals',
+      };
+    });
+
+  const loginItems: RecentActivityItem[] = loginEvents.map((ev) => {
+    const portalLabel =
+      ev.portal === 'admin'
+        ? 'Admin Console'
+        : ev.portal === 'trainer'
+        ? 'Trainer Portal'
+        : 'Member Portal';
+    const methodLabel = ev.method === 'password' ? 'Email & Password' : 'Google';
+    const roleLabel = ev.role.toUpperCase();
+    const who = ev.displayName?.trim() || ev.email;
+
+    return {
+      id: `login_${ev.id}`,
+      category: 'login',
+      title: `${who} signed in`,
+      subtitle: `${portalLabel} via ${methodLabel} · ${ev.email}`,
+      actorLabel: ev.email,
+      badgeLabel: `${roleLabel} · /${ev.portal}`,
+      badgeTone: ev.role === 'owner' || ev.role === 'staff' ? 'orange' : 'zinc',
+      timestampMs: extractTimestampMillis(ev.occurredAt),
+    };
+  });
+
+  return [...approvalItems, ...loginItems]
+    .sort((a, b) => b.timestampMs - a.timestampMs)
+    .slice(0, Math.max(1, limitCount));
 }

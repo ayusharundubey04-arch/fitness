@@ -28,9 +28,19 @@ import type {
 
 const AdminAuthGate = lazy(() => import('./admin/AdminAuthGate'));
 const AdminDashboard = lazy(() => import('./admin/AdminDashboard'));
+const MemberPortal = lazy(() => import('./member/MemberPortal'));
+const TrainerPortal = lazy(() => import('./trainer/TrainerPortal'));
 
 function isAdminPath(pathname: string): boolean {
   return pathname === '/admin' || pathname.startsWith('/admin/');
+}
+
+function isMemberPath(pathname: string): boolean {
+  return pathname === '/member' || pathname.startsWith('/member/');
+}
+
+function isTrainerPath(pathname: string): boolean {
+  return pathname === '/trainer' || pathname.startsWith('/trainer/');
 }
 
 export default function App() {
@@ -54,9 +64,12 @@ export default function App() {
   }, []);
 
   const onAdminRoute = isAdminPath(routePath);
+  const onMemberRoute = isMemberPath(routePath);
+  const onTrainerRoute = isTrainerPath(routePath);
+  const onPortalRoute = onAdminRoute || onMemberRoute || onTrainerRoute;
 
   useEffect(() => {
-    if (onAdminRoute) return;
+    if (onPortalRoute) return;
     const unsubs = [
       subscribePublicSettings(setSettings),
       subscribePublicPlans(setLivePlans),
@@ -66,9 +79,9 @@ export default function App() {
     return () => {
       for (const unsub of unsubs) unsub();
     };
-  }, [onAdminRoute]);
+  }, [onPortalRoute]);
 
-  const navigateTo = (path: '/' | '/admin') => {
+  const navigateTo = (path: '/' | '/admin' | '/member' | '/trainer') => {
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path);
       setRoutePath(path);
@@ -97,6 +110,40 @@ export default function App() {
     );
   }
 
+  if (onMemberRoute) {
+    return (
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-[#080808] text-white flex items-center justify-center text-sm text-[#A1A1AA]">
+            Loading member portal...
+          </div>
+        }
+      >
+        <MemberPortal
+          onNavigatePublic={() => navigateTo('/')}
+          onNavigateAdmin={() => navigateTo('/admin')}
+        />
+      </Suspense>
+    );
+  }
+
+  if (onTrainerRoute) {
+    return (
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-[#080808] text-white flex items-center justify-center text-sm text-[#A1A1AA]">
+            Loading trainer portal...
+          </div>
+        }
+      >
+        <TrainerPortal
+          onNavigatePublic={() => navigateTo('/')}
+          onNavigateAdmin={() => navigateTo('/admin')}
+        />
+      </Suspense>
+    );
+  }
+
   const scrollToSection = (sectionId: string) => {
     const el = document.getElementById(sectionId);
     if (el) {
@@ -118,6 +165,8 @@ export default function App() {
     <div className="min-h-screen bg-[#080808] text-white">
       <Navbar
         onJoinClick={() => scrollToSection('membership')}
+        onNavigateMember={() => navigateTo('/member')}
+        onNavigateTrainer={() => navigateTo('/trainer')}
         announcement={announcement}
       />
       <main>
@@ -149,6 +198,8 @@ export default function App() {
       <Footer
         settings={settings}
         onOpenAdmin={() => navigateTo('/admin')}
+        onOpenMember={() => navigateTo('/member')}
+        onOpenTrainer={() => navigateTo('/trainer')}
         legalModalTab={legalModalTab}
         onOpenLegalModal={setLegalModalTab}
       />

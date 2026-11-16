@@ -101,11 +101,12 @@ service cloud.firestore {
           'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'fullName', 'phone', 'email', 'joiningDate', 'planId', 'planName',
+          'userUid', 'fullName', 'phone', 'email', 'joiningDate', 'planId', 'planName',
           'startDate', 'expiryDate', 'paymentStatus', 'memberStatus',
           'assignedTrainerId', 'consentConfirmed', 'archivedAt', 'notes',
           'createdAt', 'updatedAt'
         ])
+        && (!('userUid' in data) || (data.userUid is string && data.userUid.size() <= 128))
         && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100
         && data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20
         && data.email is string && data.email.size() <= 160
@@ -141,6 +142,38 @@ service cloud.firestore {
         && isIsoDate(data.endAt)
         && data.status in ['Active', 'Expired', 'Paused', 'Cancelled']
         && data.actorUid is string && isValidId(data.actorUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMembershipRequest(data) {
+      return data.keys().hasAll([
+          'userUid', 'email', 'fullName', 'phone', 'claimType', 'planName',
+          'monthsRequested', 'existingStartDate', 'notes', 'consentAccepted',
+          'status', 'approvedMonths', 'approvedBy', 'reviewerNotes', 'linkedMemberId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userUid', 'email', 'fullName', 'phone', 'claimType', 'planName',
+          'monthsRequested', 'existingStartDate', 'notes', 'consentAccepted',
+          'status', 'approvedMonths', 'approvedBy', 'reviewerNotes', 'linkedMemberId',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.userUid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100
+        && data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20
+        && data.claimType in ['Existing Member', 'New or Renewal']
+        && data.planName is string && data.planName.size() >= 1 && data.planName.size() <= 100
+        && data.monthsRequested is number && data.monthsRequested >= 1 && data.monthsRequested <= 36
+        && isOptionalIsoDate(data.existingStartDate)
+        && data.notes is string && data.notes.size() <= 500
+        && data.consentAccepted is bool
+        && data.status in ['Pending', 'Approved', 'Rejected']
+        && data.approvedMonths is number && data.approvedMonths >= 0 && data.approvedMonths <= 36
+        && data.approvedBy is string && data.approvedBy.size() <= 160
+        && data.reviewerNotes is string && data.reviewerNotes.size() <= 300
+        && data.linkedMemberId is string && data.linkedMemberId.size() <= 128
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -354,6 +387,22 @@ service cloud.firestore {
         && data.occurredAt is timestamp;
     }
 
+    function isValidLoginEvent(data) {
+      return data.keys().hasAll([
+          'uid', 'email', 'displayName', 'role', 'portal', 'method', 'occurredAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'role', 'portal', 'method', 'occurredAt'
+        ])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.role in ['owner', 'staff', 'trainer', 'member']
+        && data.portal in ['admin', 'trainer', 'member']
+        && data.method in ['google', 'password']
+        && data.occurredAt is timestamp;
+    }
+
     function isValidPublicSettings(data) {
       return data.keys().hasAll([
           'businessName', 'address', 'phoneDisplay', 'phoneApproved',
@@ -429,11 +478,17 @@ service cloud.firestore {
 
     match /members/{memberId} {
       allow get: if isValidId(memberId) && (
-        isStaff() || (isTrainer() && existing().archivedAt == '' && isAssignedTrainerMember(existing()))
+        isStaff()
+        || (isTrainer() && existing().archivedAt == '' && isAssignedTrainerMember(existing()))
+        || (isVerifiedUser() && existing().archivedAt == '' && (
+          (('userUid' in existing()) && existing().userUid == request.auth.uid)
+          || (existing().email != '' && existing().email == request.auth.token.email)
+        ))
       );
-      allow list: if isStaff() || (
-        isTrainer() && resource.data.archivedAt == '' && isAssignedTrainerMember(resource.data)
-      );
+      allow list: if isStaff()
+        || (isTrainer() && resource.data.archivedAt == '' && isAssignedTrainerMember(resource.data))
+        || (isVerifiedUser() && resource.data.archivedAt == '' && resource.data.userUid == request.auth.uid)
+        || (isVerifiedUser() && resource.data.archivedAt == '' && resource.data.email == request.auth.token.email);
       allow create: if isStaff() && isValidId(memberId) && isValidMember(incoming())
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
@@ -441,7 +496,7 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'fullName', 'phone', 'email', 'joiningDate', 'planId', 'planName',
+          'userUid', 'fullName', 'phone', 'email', 'joiningDate', 'planId', 'planName',
           'startDate', 'expiryDate', 'paymentStatus', 'memberStatus',
           'assignedTrainerId', 'consentConfirmed', 'archivedAt', 'notes', 'updatedAt'
         ]);
@@ -466,6 +521,36 @@ service cloud.firestore {
           'memberName', 'planId', 'planName', 'startAt', 'endAt', 'status', 'actorUid', 'updatedAt'
         ]);
       allow delete: if isOwner() && isValidId(membershipId);
+    }
+
+    match /membershipRequests/{requestId} {
+      allow get: if isValidId(requestId) && (
+        isStaff() || (isVerifiedUser() && existing().userUid == request.auth.uid)
+      );
+      allow list: if isStaff() || (
+        isVerifiedUser() && resource.data.userUid == request.auth.uid
+      );
+      allow create: if isValidId(requestId) && isVerifiedUser() && isValidMembershipRequest(incoming())
+        && incoming().userUid == request.auth.uid
+        && incoming().email == request.auth.token.email
+        && incoming().consentAccepted == true
+        && incoming().status == 'Pending'
+        && incoming().approvedMonths == 0
+        && incoming().approvedBy == ''
+        && incoming().reviewerNotes == ''
+        && incoming().linkedMemberId == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isStaff() && isValidId(requestId) && isValidMembershipRequest(incoming())
+        && incoming().userUid == existing().userUid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'approvedMonths', 'approvedBy', 'reviewerNotes',
+          'linkedMemberId', 'planName', 'updatedAt'
+        ]);
+      allow delete: if isOwner() && isValidId(requestId);
     }
 
     match /membershipPlans/{planId} {
@@ -657,6 +742,24 @@ service cloud.firestore {
         && isValidAuditEvent(incoming())
         && incoming().actorUid == request.auth.uid
         && incoming().occurredAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /loginEvents/{eventId} {
+      allow get: if isStaff() && isValidId(eventId);
+      allow list: if isStaff();
+      allow create: if isVerifiedUser()
+        && isValidId(eventId)
+        && isValidLoginEvent(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().email == request.auth.token.email
+        && incoming().occurredAt == request.time
+        && (
+          (incoming().role == 'member' && incoming().portal == 'member')
+          || (incoming().role == 'trainer' && (isTrainer() || isStaff()))
+          || (incoming().role == 'staff' && isStaff())
+          || (incoming().role == 'owner' && isOwner())
+        );
       allow update, delete: if false;
     }
 

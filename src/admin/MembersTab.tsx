@@ -30,6 +30,7 @@ import {
   buildMembersCsv,
   daysUntilDate,
   formatInr,
+  normalizeEmail,
 } from '../utils/adminLogic';
 
 interface MembersTabProps {
@@ -52,6 +53,7 @@ const EMPTY_FORM = {
   paymentStatus: 'Pending' as PaymentStatus,
   memberStatus: 'Active' as MemberStatus,
   assignedTrainerId: '',
+  userUid: '',
   consentConfirmed: true,
   archivedAt: '',
   notes: '',
@@ -130,6 +132,7 @@ export default function MembersTab({
       paymentStatus: member.paymentStatus,
       memberStatus: member.memberStatus,
       assignedTrainerId: member.assignedTrainerId || '',
+      userUid: member.userUid || '',
       consentConfirmed: Boolean(member.consentConfirmed),
       archivedAt: member.archivedAt || '',
       notes: member.notes || '',
@@ -180,7 +183,7 @@ export default function MembersTab({
         {
           fullName: form.fullName.trim(),
           phone: form.phone.trim(),
-          email: form.email.trim(),
+          email: normalizeEmail(form.email),
           joiningDate: form.joiningDate,
           planId: form.planId || 'custom',
           planName: form.planName.trim() || 'Custom Plan',
@@ -189,6 +192,7 @@ export default function MembersTab({
           paymentStatus: form.paymentStatus,
           memberStatus: form.memberStatus,
           assignedTrainerId: form.assignedTrainerId.trim(),
+          userUid: form.userUid.trim(),
           consentConfirmed: form.consentConfirmed,
           archivedAt: form.archivedAt,
           notes: form.notes.trim(),
@@ -209,7 +213,7 @@ export default function MembersTab({
       {
         fullName: member.fullName,
         phone: member.phone,
-        email: member.email,
+        email: normalizeEmail(member.email),
         joiningDate: member.joiningDate,
         planId: member.planId,
         planName: member.planName,
@@ -218,6 +222,7 @@ export default function MembersTab({
         paymentStatus: member.paymentStatus,
         memberStatus: member.memberStatus,
         assignedTrainerId: member.assignedTrainerId || '',
+        userUid: member.userUid || '',
         consentConfirmed: Boolean(member.consentConfirmed),
         archivedAt: member.archivedAt ? '' : todayIso,
         notes: member.notes || '',
@@ -431,7 +436,14 @@ export default function MembersTab({
                       </td>
                       <td className="py-3.5 px-4">
                         <p className="text-white tabular-nums">{member.phone}</p>
-                        <p className="text-xs text-[#A1A1AA]">{member.email || 'No email'}</p>
+                        <p className="text-xs text-[#A1A1AA]">
+                          {member.email || 'No email'}
+                          {member.userUid && (
+                            <span className="ml-2 text-[11px] font-medium text-emerald-400">
+                              · Gmail Linked
+                            </span>
+                          )}
+                        </p>
                       </td>
                       <td className="py-3.5 px-4">
                         <p className="text-white">{member.planName}</p>
@@ -722,6 +734,18 @@ export default function MembersTab({
                     ))}
                   </select>
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-[#A1A1AA] mb-1.5">
+                    Linked Member Google UID (Optional — auto-populated when approving Gmail request)
+                  </label>
+                  <input
+                    type="text"
+                    value={form.userUid}
+                    onChange={(e) => setForm({ ...form, userUid: e.target.value })}
+                    placeholder="Auto-linked via Member Portal"
+                    className="w-full min-h-[42px] rounded-md border border-white/15 bg-[#080808] px-3 text-xs font-mono text-white focus:border-[#FF5A1F] focus:outline-none"
+                  />
+                </div>
               </div>
 
               <label className="inline-flex items-center gap-2 text-xs text-white cursor-pointer">
@@ -822,6 +846,12 @@ export default function MembersTab({
                 <dt className="text-xs text-[#A1A1AA]">Privacy Consent</dt>
                 <dd className="text-white text-xs">
                   {viewingMember.consentConfirmed ? 'Confirmed' : 'Pending confirmation'}
+                </dd>
+              </div>
+              <div className="col-span-2">
+                <dt className="text-xs text-[#A1A1AA]">Gmail / Member Portal Link</dt>
+                <dd className="text-white font-mono text-xs">
+                  {viewingMember.userUid ? `Linked (${viewingMember.userUid})` : 'Not linked to a Google UID yet'}
                 </dd>
               </div>
             </dl>

@@ -23,7 +23,9 @@ import {
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import {
+  clearLoginSessionMarkers,
   subscribeAdminCollection,
+  subscribeLoginEvents,
   subscribeOperationsSettings,
   subscribePublicSettings,
   subscribeTrainerAttendance,
@@ -36,8 +38,10 @@ import type {
   EnquiryRecord,
   GalleryPhotoRecord,
   GymMember,
+  LoginEventRecord,
   MembershipPlanRecord,
   MembershipRecord,
+  MembershipRequestRecord,
   OperationsSettingsRecord,
   PaymentRecord,
   SiteContentRecord,
@@ -47,6 +51,7 @@ import type {
   TrainerRecord,
 } from '../types/gym';
 import OverviewTab from './OverviewTab';
+import ApprovalsTab from './ApprovalsTab';
 import TrainerRosterTab from './TrainerRosterTab';
 import MembersTab from './MembersTab';
 import MembershipsTab from './MembershipsTab';
@@ -68,6 +73,7 @@ interface AdminDashboardProps {
 
 type AdminTabId =
   | 'overview'
+  | 'approvals'
   | 'roster'
   | 'members'
   | 'memberships'
@@ -91,6 +97,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, roles: ['owner', 'staff'] },
+  { id: 'approvals', label: 'Pending Approvals', icon: UserCheck, roles: ['owner', 'staff'] },
   { id: 'roster', label: 'Assigned Roster', icon: UserCheck, roles: ['trainer'] },
   { id: 'members', label: 'Members', icon: Users, roles: ['owner', 'staff'] },
   { id: 'memberships', label: 'Memberships', icon: RefreshCw, roles: ['owner', 'staff'] },
@@ -125,6 +132,7 @@ export default function AdminDashboard({
 
   const [members, setMembers] = useState<GymMember[]>([]);
   const [memberships, setMemberships] = useState<MembershipRecord[]>([]);
+  const [membershipRequests, setMembershipRequests] = useState<MembershipRequestRecord[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [plans, setPlans] = useState<MembershipPlanRecord[]>([]);
   const [enquiries, setEnquiries] = useState<EnquiryRecord[]>([]);
@@ -134,6 +142,7 @@ export default function AdminDashboard({
   const [siteContent, setSiteContent] = useState<SiteContentRecord[]>([]);
   const [staffList, setStaffList] = useState<StaffAccount[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEventRecord[]>([]);
+  const [loginEvents, setLoginEvents] = useState<LoginEventRecord[]>([]);
   const [settings, setSettings] = useState<SiteSettingsRecord | null>(null);
   const [operationsSettings, setOperationsSettings] =
     useState<OperationsSettingsRecord | null>(null);
@@ -164,6 +173,10 @@ export default function AdminDashboard({
     const unsubs = [
       subscribeAdminCollection<GymMember>('members', setMembers),
       subscribeAdminCollection<MembershipRecord>('memberships', setMemberships),
+      subscribeAdminCollection<MembershipRequestRecord>(
+        'membershipRequests',
+        setMembershipRequests,
+      ),
       subscribeAdminCollection<AttendanceRecord>('attendance', setAttendance),
       subscribeAdminCollection<MembershipPlanRecord>('membershipPlans', (rows) =>
         setPlans([...rows].sort((a, b) => a.durationDays - b.durationDays)),
@@ -173,6 +186,7 @@ export default function AdminDashboard({
       subscribeAdminCollection<PaymentRecord>('payments', setPayments),
       subscribeAdminCollection<GalleryPhotoRecord>('gallery', setGallery),
       subscribeAdminCollection<SiteContentRecord>('siteContent', setSiteContent),
+      subscribeLoginEvents(setLoginEvents, 50),
       subscribePublicSettings(setSettings),
     ];
 
@@ -190,6 +204,9 @@ export default function AdminDashboard({
   }, [staffUser.role, staffUser.uid, staffUser.assignedTrainerId]);
 
   const newEnquiryCount = enquiries.filter((e) => e.status === 'New').length;
+  const pendingApprovalCount = membershipRequests.filter(
+    (r) => r.status === 'Pending',
+  ).length;
 
   const handleSelectTab = (tab: AdminTabId) => {
     setActiveTab(tab);
@@ -241,6 +258,15 @@ export default function AdminDashboard({
                     {newEnquiryCount}
                   </span>
                 )}
+                {item.id === 'approvals' && pendingApprovalCount > 0 && (
+                  <span
+                    className={`text-xs font-bold tabular-nums px-1.5 py-0.5 rounded ${
+                      isActive ? 'bg-black/25 text-white' : 'bg-amber-500/20 text-amber-300'
+                    }`}
+                  >
+                    {pendingApprovalCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -268,7 +294,10 @@ export default function AdminDashboard({
           </a>
           <button
             type="button"
-            onClick={() => signOut(auth)}
+            onClick={() => {
+              clearLoginSessionMarkers();
+              void signOut(auth);
+            }}
             className="w-full min-h-[40px] flex items-center justify-center gap-2 rounded-md border border-white/10 bg-[#080808] px-3 text-xs font-medium text-[#A1A1AA] hover:text-white cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
@@ -316,6 +345,11 @@ export default function AdminDashboard({
                 {item.id === 'enquiries' && newEnquiryCount > 0 && (
                   <span className="text-xs font-bold tabular-nums">{newEnquiryCount}</span>
                 )}
+                {item.id === 'approvals' && pendingApprovalCount > 0 && (
+                  <span className="text-xs font-bold tabular-nums text-amber-300">
+                    {pendingApprovalCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -333,7 +367,10 @@ export default function AdminDashboard({
             </a>
             <button
               type="button"
-              onClick={() => signOut(auth)}
+              onClick={() => {
+                clearLoginSessionMarkers();
+                void signOut(auth);
+              }}
               className="flex-1 min-h-[40px] flex items-center justify-center gap-1.5 rounded-md border border-white/10 bg-[#080808] text-xs font-medium text-[#A1A1AA] cursor-pointer"
             >
               <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
@@ -365,7 +402,20 @@ export default function AdminDashboard({
               enquiries={enquiries}
               payments={payments}
               siteContent={siteContent}
+              membershipRequests={membershipRequests}
+              loginEvents={loginEvents}
+              isOwner={staffUser.role === 'owner'}
+              pendingApprovalsCount={pendingApprovalCount}
               onNavigateTab={(tab) => setActiveTab(tab as AdminTabId)}
+            />
+          )}
+          {activeTab === 'approvals' && staffUser.role !== 'trainer' && (
+            <ApprovalsTab
+              requests={membershipRequests}
+              members={members}
+              plans={plans}
+              trainers={trainers}
+              staffUser={staffUser}
             />
           )}
           {activeTab === 'roster' && staffUser.role === 'trainer' && (
